@@ -8,7 +8,7 @@
 | 4 | Scaffold Vue 3 + Vuex SPA with chat shell + API adapters | completed | Added Vite Vue app, store, chat UI, Docker entrypoint + compose wiring. |
 | 5 | Build Python RAG orchestrator service (FastAPI) with embedding + LLM client interfaces | completed | Added FastAPI app, in-memory session manager, HTTP clients & Docker image. |
 | 6 | Package llama.cpp service with model download/init scripts for Mistral 7B Q4_K_M | completed | Added llama.cpp build image, config-driven entrypoint, compose volume wiring. |
-| 7 | Package embedding worker using `bge-base-en-v1.5` and expose embedding endpoint | pending |  |
+| 7 | Package embedding worker using `bge-base-en-v1.5` and expose embedding endpoint | completed | Added FastAPI embed service, model caching, Docker image + compose volume. |
 | 8 | Configure Elasticsearch 9.1.4 container, index templates, and bootstrap scripts | pending |  |
 | 9 | Implement DuckDuckGo search agent + web scraper for resource ingestion | pending |  |
 | 10 | Implement calibration phase flows (profile capture, diagnostic Q&A, persistence) | pending |  |
