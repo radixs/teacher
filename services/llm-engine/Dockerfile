@@ -13,6 +13,8 @@ RUN apt-get update \
         wget \
         python3 \
         python3-pip \
+        libcurl4-openssl-dev \
+        pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
