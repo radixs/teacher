@@ -5,6 +5,7 @@ This repository hosts a containerized learning companion that guides users throu
 ## Status
 Calibration flow implemented: sessions begin with guided questions whose answers are stored in Elasticsearch for later tuning.
 Tuning roadmap generator creates a dependency list after calibration and stores it in Elasticsearch.
+Learning phase scaffolding: each concept exposes resources + exercises and advances when answers meet placeholder evaluation (full grading arrives in Step 13).
 The project is in the bootstrap phase. Core services, orchestration scripts, and documentation are being scaffolded according to the rollout plan in `rollout.md`.
 
 ## Prerequisites

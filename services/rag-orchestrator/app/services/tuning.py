@@ -14,6 +14,7 @@ DEFAULT_CURRICULUM = [
             {"type": "doc", "title": "Elasticsearch 101", "url": "https://www.elastic.co/guide/en/elasticsearch/reference/current/elasticsearch-intro.html"},
             {"type": "course", "title": "Elastic Certified Engineer Study", "url": "https://www.elastic.co/training/"}
         ],
+        "exercise": "List three core Elasticsearch components and describe how they interact during ingestion and search."
     },
     {
         "concept_id": "relevance",
@@ -23,6 +24,7 @@ DEFAULT_CURRICULUM = [
         "resources": [
             {"type": "doc", "title": "Search Relevance Tuning", "url": "https://www.elastic.co/guide/en/elasticsearch/reference/current/tune-search.html"}
         ],
+        "exercise": "Provide an example where you would tune relevance scoring and which parameters/analyzers you would adjust."
     },
     {
         "concept_id": "vector_search",
@@ -32,6 +34,7 @@ DEFAULT_CURRICULUM = [
         "resources": [
             {"type": "doc", "title": "Approximate kNN", "url": "https://www.elastic.co/guide/en/elasticsearch/reference/current/knn-search.html"}
         ],
+        "exercise": "Explain how you would measure vector search quality for your use case and what fallback strategies you would keep."
     },
     {
         "concept_id": "rag_systems",
@@ -41,6 +44,7 @@ DEFAULT_CURRICULUM = [
         "resources": [
             {"type": "article", "title": "Building RAG with Elasticsearch", "url": "https://www.elastic.co/blog"}
         ],
+        "exercise": "Outline a retrieval pipeline for your goal and identify where Elasticsearch adds the most value."
     },
     {
         "concept_id": "esre_practice",
@@ -50,6 +54,7 @@ DEFAULT_CURRICULUM = [
         "resources": [
             {"type": "guide", "title": "Elastic Relevance Engine", "url": "https://www.elastic.co/what-is/elasticsearch/relevance-engine"}
         ],
+        "exercise": "Draft an experiment plan to evaluate ESRE improvements and how you would operationalize the learnings."
     },
 ]
 

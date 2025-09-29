@@ -50,6 +50,41 @@ class SessionManager:
         session = self._require_session(session_id)
         session.tuning_plan = plan
         session.phase = "tuning"
+        session.current_concept_index = 0
+        session.learning_progress = []
+        return session
+
+    def begin_learning(self, session_id: str) -> Session:
+        session = self._require_session(session_id)
+        if not session.tuning_plan:
+            raise ValueError("No tuning plan defined for session")
+        session.phase = "learning"
+        session.current_concept_index = 0
+        session.learning_progress = []
+        return session
+
+    def record_learning_outcome(
+        self,
+        session_id: str,
+        concept_id: str,
+        status: str,
+        feedback: str,
+    ) -> Session:
+        session = self._require_session(session_id)
+        session.learning_progress.append(
+            {
+                "concept_id": concept_id,
+                "status": status,
+                "feedback": feedback,
+            }
+        )
+        return session
+
+    def advance_concept(self, session_id: str) -> Session:
+        session = self._require_session(session_id)
+        session.current_concept_index += 1
+        if session.current_concept_index >= len(session.tuning_plan):
+            session.phase = "learning_complete"
         return session
 
     def _require_session(self, session_id: str) -> Session:

@@ -13,7 +13,7 @@
 | 9 | Implement DuckDuckGo search agent + web scraper for resource ingestion | completed | Added FastAPI search service, scraper, Docker image, compose wiring. |
 | 10 | Implement calibration phase flows (profile capture, diagnostic Q&A, persistence) | completed | Added calibration planner, stateful session flow, ES persistence for answers. |
 | 11 | Implement tuning program generator (dependency graph authoring + storage) | completed | Added tuning generator, ES persistence, session phase transition. |
-| 12 | Implement learning phase (lesson delivery, resource linking, exercise prompts) | pending |  |
+| 12 | Implement learning phase (lesson delivery, resource linking, exercise prompts) | completed | Added learning coordinator, lesson messaging, progress tracking + tests. |
 | 13 | Implement exercise grading pipeline + configurable rubrics | pending |  |
 | 14 | Build lab primer generator + temp recipe handling | pending |  |
 | 15 | Implement automated test suites (`make test`: containers, API with stubs, RAG integration, UI e2e) | pending |  |

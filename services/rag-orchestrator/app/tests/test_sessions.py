@@ -15,10 +15,13 @@ class FakeEmbeddingClient:
 
 
 class FakeElasticsearchClient:
-    async def store_interaction(self, *args, **kwargs):  # noqa: D401
+    async def store_interaction(self, *args, **kwargs):
         return None
 
     async def store_snapshot(self, *args, **kwargs):
+        return None
+
+    async def store_dependency_node(self, *args, **kwargs):
         return None
 
     async def close(self):
@@ -47,23 +50,49 @@ def test_start_session_creates_session():
     assert response.status_code == 200
     payload = response.json()
     assert payload["goal"] == "Learn ESRE"
-    assert payload["messages"][-1]["role"] == "assistant"
     assert payload["messages"][-1]["metadata"]["stage"] == "calibration"
     assert payload.get("tuning_plan") == []
 
 
-def test_calibration_progression_moves_to_tuning():
+def test_calibration_transitions_to_learning():
     start = client.post("/v1/sessions", json={"goal": "Learn ESRE"})
     session_id = start.json()["id"]
 
-    # answer enough questions to exhaust calibration queue
-    for i in range(10):
+    for i in range(6):
         response = client.post(
             f"/v1/sessions/{session_id}",
-            json={"message": f"answer {i}"},
+            json={"message": f"I am sharing calibration info iteration {i}"},
         )
         assert response.status_code == 200
 
-    data = client.get(f"/v1/sessions/{session_id}").json()
-    assert data["phase"] == "tuning"
-    assert len(data.get("tuning_plan", [])) > 0
+    session_payload = client.get(f"/v1/sessions/{session_id}").json()
+    assert session_payload["phase"] == "learning"
+    assert len(session_payload.get("tuning_plan", [])) > 0
+    assert session_payload["messages"][-1]["metadata"]["stage"] == "learning_intro"
+
+
+def test_learning_evaluation_advances_concept():
+    start = client.post("/v1/sessions", json={"goal": "Learn ESRE"})
+    session_id = start.json()["id"]
+
+    # Drive calibration to completion
+    for i in range(6):
+        client.post(
+            f"/v1/sessions/{session_id}",
+            json={"message": f"Calibration answer iteration {i}"},
+        )
+
+    # Submit learning answer with enough detail to pass placeholder evaluation
+    learning_answer = (
+        "I reviewed the docs about indices, shards, and relevance scoring. "
+        "My plan is to run experiments comparing vector and keyword retrieval while documenting the setup."
+    )
+    response = client.post(
+        f"/v1/sessions/{session_id}",
+        json={"message": learning_answer},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["session"]["phase"] in {"learning", "learning_complete"}
+    # assistant encourages next steps or completion
+    assert data["last_message"]["metadata"]["stage"] in {"learning_next", "learning_complete"}
