@@ -62,12 +62,10 @@ async def start_session(
         ).format(goal=payload.goal)
     )
 
+    content = llm_response.get("content") or llm_response.get("text") or "Welcome! Let's begin by clarifying what you already know about this goal."
     assistant_message = Message(
         role="assistant",
-        content=llm_response.get(
-            "text",
-            "Welcome! Let's begin by clarifying what you already know about this goal.",
-        ),
+        content=content,
         metadata={"phase": session.phase},
     )
     session_manager.add_message(session.id, assistant_message)
@@ -98,12 +96,10 @@ async def send_message(
         },
     )
 
+    content = llm_response.get("content") or llm_response.get("text") or "Acknowledged. Further orchestration logic will arrive in a later step."
     assistant_message = Message(
         role="assistant",
-        content=llm_response.get(
-            "text",
-            "Acknowledged. Further orchestration logic will arrive in a later step.",
-        ),
+        content=content,
         metadata={"phase": session.phase},
     )
     session_manager.add_message(session_id, assistant_message)
