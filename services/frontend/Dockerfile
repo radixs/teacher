@@ -1,7 +1,21 @@
 # syntax=docker/dockerfile:1.6
-# Placeholder Dockerfile for Vue 3 SPA frontend.
-# TODO: install Node.js, dependencies, and production web server.
 
-FROM alpine:3.19 AS todo
+FROM node:20-alpine AS base
 
-CMD ["/bin/sh", "-c", "echo Frontend image not yet implemented; exit 1"]
+WORKDIR /usr/src/app
+
+# Install dependencies at build time for caching benefits when using image directly
+COPY app/package*.json ./
+RUN npm install --no-audit --no-fund
+
+# Copy source
+COPY app .
+
+ENV FRONTEND_INTERNAL_PORT=3000
+
+EXPOSE 3000
+
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+CMD ["/entrypoint.sh"]

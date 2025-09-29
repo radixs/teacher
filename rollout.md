@@ -5,7 +5,7 @@
 | 1 | Establish documentation + governance scaffolding (`AGENTS.md`, README stub, `.env` templates) | completed | Added `AGENTS.md`, README scaffold, and `.env.dist`. |
 | 2 | Define container orchestration skeleton (docker-compose, Makefile targets, base Dockerfiles) | completed | Added compose file, Makefile, placeholders for service Dockerfiles. |
 | 3 | Scaffold backend Laravel 12 project with service boundaries + config stubs | completed | Added Laravel skeleton, service wiring, env/config stubs, Dockerfile + entrypoint. |
-| 4 | Scaffold Vue 3 + Vuex SPA with chat shell + API adapters | pending |  |
+| 4 | Scaffold Vue 3 + Vuex SPA with chat shell + API adapters | completed | Added Vite Vue app, store, chat UI, Docker entrypoint + compose wiring. |
 | 5 | Build Python RAG orchestrator service (FastAPI) with embedding + LLM client interfaces | pending |  |
 | 6 | Package llama.cpp service with model download/init scripts for Mistral 7B Q4_K_M | pending |  |
 | 7 | Package embedding worker using `bge-base-en-v1.5` and expose embedding endpoint | pending |  |

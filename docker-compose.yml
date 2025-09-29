@@ -22,8 +22,14 @@ services:
       - .env
     depends_on:
       - backend
+    environment:
+      - VITE_API_BASE_URL=${FRONTEND_VITE_API_BASE_URL:-http://backend:8080/api/v1}
+      - FRONTEND_INTERNAL_PORT=${FRONTEND_INTERNAL_PORT:-3000}
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
+    volumes:
+      - ./services/frontend/app:/usr/src/app
+      - frontend_node_modules:/usr/src/app/node_modules
     networks:
       - appnet
 
@@ -103,6 +109,7 @@ services:
 
 volumes:
   es_data:
+  frontend_node_modules:
 
 networks:
   appnet:
