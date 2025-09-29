@@ -1,5 +1,3 @@
-Analyze the following instructions on making an application and WITHOUT MAKING ANY CHANGES YET tell me if it is enough and it is clear what needs to be done and you have everything you need to orchestrate creation of the app.
-
 Goal:
 Application where through a GUI I will be able to via chat talk to a model that will have RAG access to ElasticSearch database to store details about what I already know, how well I understand it, what I do not know, what I still need to learn about a given topic.
 
@@ -53,6 +51,8 @@ Dev container primer - only provision the application as defined here. Any furth
 Create a readme.md outlining how to use.
 
 Divide the creation of this application into steps and document in rollout.md - these should be small and conscise steps that are easy for you to understand. You will then proceed and implement step by step - at completion of each step mark the step as completed and specify briefly what has been done - in case the creation got interrupted - so it is easy for you to pick up and als serve as a reference point later should there be a need to expand the project.
+I am on OpenAi plus plan so my token limit might cause session to get interrupted. You should be able to pick up where you left of in case the session gets interrupted.
+Before starting next step ask user if user wants to commit current changes. User will perform the commit and push.
 
 Create AGENTS.md file where you add important details to prevent you from hallucinating and loosing context and also leave instructions for yourself how to handle rollout.md as specified above.
 
@@ -61,3 +61,44 @@ Testing expectations:
 - validate api endpoints with wiremock stubs so that database is not used
 - perhaps spin up a temporary ES cluster and test all flows - ingestion and retrieval with the use of model
 - UI e2e are desirable but also should base on stubs and not call the backend directly
+---
+
+Assistant readiness notes (do not delete):
+
+Chosen local inference stack:
+- Chat model: `mistral-7b-instruct-v0.2` quantized to `Q4_K_M`, served through `llama.cpp` compiled with HIP for AMD GPUs (falls back to CPU if HIP unavailable).
+- Embedding model: `bge-base-en-v1.5` (768-d vector) via `sentence-transformers`; runs on CPU or the same HIP-enabled container. Elasticsearch index mappings will use `dense_vector` (dims=768) with kNN search (`hnsw`, `ef_search`, `ef_construction`).
+
+Retrieval & knowledge storage layout:
+- ES indices: `user_profiles`, `knowledge_snapshots`, `learning_resources`, `dependency_graph`, `session_interactions`. Each document stores metadata + embedding and raw text chunks for semantic recall.
+- Version: Elasticsearch 9.1.4 (docker image). Will configure vector search, ingest pipelines for text normalization, and snapshot lifecycle if needed.
+
+Service topology (all containerized via docker compose):
+- `frontend`: Vue 3 SPA with Vuex for state, Vite build.
+- `backend`: Laravel 12 API gateway handling sessions, persistence, auth-less token gating, and orchestrating RAG calls.
+- `rag-orchestrator`: Python FastAPI microservice handling prompt assembly, embedding generation, evaluation, and coordinating llama.cpp + Elasticsearch.
+- `llm-engine`: llama.cpp server container hosting the chosen chat model; exposes HTTP/gRPC for chat + evaluation prompts.
+- `embedding-worker`: lightweight worker (could live inside rag-orchestrator) exposing embedding endpoint using sentence-transformers.
+- `search-agent`: Python tool for outbound DuckDuckGo querying + scraping (requests/readability). Could be merged with orchestrator but will keep modular during design.
+- `elasticsearch`: official ES container; optional `kibana` service for manual inspection.
+
+External resource gathering:
+- Primary search source: DuckDuckGo (HTML endpoint). No API key needed; rely on server-side HTTP requests with backoff, random user agents, and rate limiting to stay well-behaved. Results persisted to `learning_resources` index.
+- Scraping: use `requests` + `readability-lxml`; fallback to `trafilatura` for full-text extraction when HTML messy. Respect robots.txt; throttle requests.
+
+Exercise grading approach:
+- Grading pipeline executes dedicated LLM prompt (same mistral model) with rubric + answer context.
+- Config file (`grading_profiles.yaml`) defines rubric, keyword anchors, self-assessment weight, confidence thresholds.
+- Backend stores grading outcomes & rationales in ES; allows manual override.
+
+Dev-container / lab provisioning:
+- Main repo ships a `.devcontainer` that runs full stack (no extra labs).
+- When exercises demand hands-on ES/Kibana work, the assistant replies with a generated lab recipe (docker-compose + Makefile) for the user to copy to a temp dir; optionally auto-creates under `/tmp/labs/<slug>` inside container if permitted.
+
+Testing game plan (ties into `make test`):
+- Container smoke tests: ensure each compose service reaches healthy state.
+- API contract tests: Laravel endpoints validated against WireMock stubs (Python orchestrator & ES stubbed).
+- RAG integration test: spin ephemeral ES (real), load fixture docs, run embedding + retrieval + chat generation end-to-end.
+- UI e2e: Cypress (component + e2e) hitting mocked backend (WireMock/Mock Service Worker).
+
+Next steps before implementation: draft rollout.md with step-wise plan, scaffold Makefile + compose definitions, create AGENTS.md with guardrails. Await green light to proceed with edits beyond this file.
