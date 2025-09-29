@@ -1,7 +1,27 @@
 # syntax=docker/dockerfile:1.6
-# Placeholder Dockerfile for RAG orchestrator FastAPI service.
-# TODO: install Python runtime, dependencies, and app entrypoint.
 
-FROM alpine:3.19 AS todo
+FROM python:3.11-slim AS base
 
-CMD ["/bin/sh", "-c", "echo RAG orchestrator image not yet implemented; exit 1"]
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /usr/src/app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY app ./app
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENV RAG_APP_NAME="RAG Orchestrator" \
+    RAG_HOST=0.0.0.0 \
+    RAG_PORT=9000
+
+EXPOSE 9000
+
+ENTRYPOINT ["/entrypoint.sh"]

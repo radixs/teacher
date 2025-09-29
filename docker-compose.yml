@@ -38,6 +38,10 @@ services:
       context: ./services/rag-orchestrator
     env_file:
       - .env
+    environment:
+      - RAG_HOST=0.0.0.0
+      - RAG_PORT=${RAG_API_PORT:-9000}
+      - RAG_RELOAD=${RAG_RELOAD:-}
     depends_on:
       - llm-engine
       - embedding-worker
@@ -45,6 +49,8 @@ services:
       - elasticsearch
     ports:
       - "${RAG_API_PORT:-9000}:9000"
+    volumes:
+      - ./services/rag-orchestrator/app:/usr/src/app/app
     networks:
       - appnet
 
