@@ -12,10 +12,16 @@ class LlmClient:
     async def generate(self, prompt: str, context: Dict[str, Any] | None = None) -> Dict[str, Any]:
         # TODO: integrate with llama.cpp server once available.
         _ = context  # placeholder until real payload defined
+        payload: Dict[str, Any] = {"prompt": prompt}
+        if context:
+            payload["context"] = context
         try:
-            response = await self._client.post("/generate", json={"prompt": prompt})
+            response = await self._client.post("/completion", json=payload)
             response.raise_for_status()
-            return response.json()
+            data = response.json()
+            if isinstance(data, dict):
+                return data
+            return {"text": str(data)}
         except Exception:
             return {
                 "text": "This is a placeholder response from the orchestrator until the LLM service is ready.",
