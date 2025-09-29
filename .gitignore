@@ -1,0 +1,36 @@
+# Environment files
+.env
+.env.local
+
+# Node artifacts
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# PHP / Laravel artifacts
+vendor/
+bootstrap/cache/
+storage/logs/
+storage/framework/cache/*
+storage/framework/sessions/*
+storage/framework/views/*
+
+# Python artifacts
+__pycache__/
+*.pyc
+.venv/
+.envrc
+
+# Build outputs
+public/dist/
+dist/
+coverage/
+
+# Docker volumes / data
+volumes/
+.data/
+
+# IDE files
+.idea/
+.vscode/
+.DS_Store

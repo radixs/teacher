@@ -2,8 +2,8 @@
 
 | Step | Description | Status | Notes |
 | --- | --- | --- | --- |
-| 1 | Establish documentation + governance scaffolding (`AGENTS.md`, README stub, `.env` templates) | pending |  |
-| 2 | Define container orchestration skeleton (docker-compose, Makefile targets, base Dockerfiles) | pending |  |
+| 1 | Establish documentation + governance scaffolding (`AGENTS.md`, README stub, `.env` templates) | completed | Added `AGENTS.md`, README scaffold, and `.env.dist`. |
+| 2 | Define container orchestration skeleton (docker-compose, Makefile targets, base Dockerfiles) | completed | Added compose file, Makefile, placeholders for service Dockerfiles. |
 | 3 | Scaffold backend Laravel 12 project with service boundaries + config stubs | pending |  |
 | 4 | Scaffold Vue 3 + Vuex SPA with chat shell + API adapters | pending |  |
 | 5 | Build Python RAG orchestrator service (FastAPI) with embedding + LLM client interfaces | pending |  |

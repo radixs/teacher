@@ -1,0 +1,109 @@
+services:
+  backend:
+    build:
+      context: ./services/backend
+    env_file:
+      - .env
+    depends_on:
+      - elasticsearch
+      - rag-orchestrator
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+    volumes:
+      - backend_storage:/var/www
+    networks:
+      - appnet
+
+  frontend:
+    build:
+      context: ./services/frontend
+    env_file:
+      - .env
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    networks:
+      - appnet
+
+  rag-orchestrator:
+    build:
+      context: ./services/rag-orchestrator
+    env_file:
+      - .env
+    depends_on:
+      - llm-engine
+      - embedding-worker
+      - search-agent
+      - elasticsearch
+    ports:
+      - "${RAG_API_PORT:-9000}:9000"
+    networks:
+      - appnet
+
+  llm-engine:
+    build:
+      context: ./services/llm-engine
+    env_file:
+      - .env
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+    ports:
+      - "${LLM_ENGINE_PORT:-8000}:8000"
+    networks:
+      - appnet
+
+  embedding-worker:
+    build:
+      context: ./services/embedding-worker
+    env_file:
+      - .env
+    ports:
+      - "${EMBEDDING_PORT:-9100}:9100"
+    networks:
+      - appnet
+
+  search-agent:
+    build:
+      context: ./services/search-agent
+    env_file:
+      - .env
+    networks:
+      - appnet
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.1.4
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms2g -Xmx2g
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+      - ./infrastructure/elasticsearch/config:/usr/share/elasticsearch/config
+    ports:
+      - "${ELASTICSEARCH_PORT:-9200}:9200"
+      - "${ELASTICSEARCH_TRANSPORT_PORT:-9300}:9300"
+    networks:
+      - appnet
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:9.1.4
+    depends_on:
+      - elasticsearch
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports:
+      - "${KIBANA_PORT:-5601}:5601"
+    networks:
+      - appnet
+
+volumes:
+  es_data:
+  backend_storage:
+
+networks:
+  appnet:
+    driver: bridge
