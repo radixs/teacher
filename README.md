@@ -36,7 +36,7 @@ After bringing the stack up, run `make bootstrap-es` to apply Elasticsearch inde
 | rag-orchestrator | Prompt assembly, context retrieval, evaluation | FastAPI |
 | llm-engine | Hosts mistral-7b-instruct via llama.cpp (configurable via `services/llm-engine/config.yaml`, models cached under `llm_models` volume) | C++/llama.cpp |
 | embedding-worker | Generates `bge-base-en-v1.5` embeddings (FastAPI microservice, caches models under `embedding_models` volume) | Python + sentence-transformers |
-| search-agent | DuckDuckGo search + scraping for resources | Python |
+| search-agent | DuckDuckGo search + optional page scraping (`/v1/search` endpoint) | Python |
 | elasticsearch | Vector store & knowledge base | Elasticsearch 9.1.4 |
 | kibana | Optional UI for Elasticsearch | Kibana 9.1.4 |
 

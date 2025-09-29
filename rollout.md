@@ -10,7 +10,7 @@
 | 6 | Package llama.cpp service with model download/init scripts for Mistral 7B Q4_K_M | completed | Added llama.cpp build image, config-driven entrypoint, compose volume wiring. |
 | 7 | Package embedding worker using `bge-base-en-v1.5` and expose embedding endpoint | completed | Added FastAPI embed service, model caching, Docker image + compose volume. |
 | 8 | Configure Elasticsearch 9.1.4 container, index templates, and bootstrap scripts | completed | Added index templates, bootstrap script, compose volume + Make target. |
-| 9 | Implement DuckDuckGo search agent + web scraper for resource ingestion | pending |  |
+| 9 | Implement DuckDuckGo search agent + web scraper for resource ingestion | completed | Added FastAPI search service, scraper, Docker image, compose wiring. |
 | 10 | Implement calibration phase flows (profile capture, diagnostic Q&A, persistence) | pending |  |
 | 11 | Implement tuning program generator (dependency graph authoring + storage) | pending |  |
 | 12 | Implement learning phase (lesson delivery, resource linking, exercise prompts) | pending |  |

@@ -94,6 +94,12 @@ services:
       context: ./services/search-agent
     env_file:
       - .env
+    environment:
+      - SEARCH_AGENT_PORT=${SEARCH_AGENT_PORT:-9205}
+      - SEARCH_AGENT_REQUEST_INTERVAL_SECONDS=${DUCKDUCKGO_REQUEST_INTERVAL_SECONDS:-2.0}
+      - SEARCH_AGENT_USER_AGENT=${DUCKDUCKGO_USER_AGENT:-teacher-app-bot/0.1}
+    ports:
+      - "${SEARCH_AGENT_PORT:-9205}:9205"
     networks:
       - appnet
 
