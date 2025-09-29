@@ -5,6 +5,17 @@ from typing import List
 
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
+import torch
+
+if hasattr(torch.utils, '_pytree') and not hasattr(torch.utils._pytree, 'register_pytree_node'):
+    _legacy_register = torch.utils._pytree._register_pytree_node  # type: ignore[attr-defined]
+
+    def _compat_register_pytree_node(*args, **kwargs):
+        allowed = {k: v for k, v in kwargs.items() if k in {'namespace', 'name', 'priority'}}
+        return _legacy_register(*args, **allowed)
+
+    torch.utils._pytree.register_pytree_node = _compat_register_pytree_node  # type: ignore[attr-defined]
+
 from sentence_transformers import SentenceTransformer
 
 

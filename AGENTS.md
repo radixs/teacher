@@ -42,3 +42,4 @@
 - Grading config lives at `services/rag-orchestrator/config/grading_profiles.yaml`; ensure prompts demand JSON with passed/score/feedback/highlights.
 - Lab primers: trigger with `/lab <topic>`; auto-write to `RAG_LAB_OUTPUT_ROOT` when `RAG_LAB_AUTO_WRITE=1`.
 - `make test` runs: backend `php artisan test`, rag-orchestrator + search-agent `pytest`, frontend build smoke; extend as stack evolves.
+- GPU usage: llama.cpp built with HIP; containers map `/dev/kfd` and `/dev/dri` and expect ROCm drivers. Set `HIP_VISIBLE_DEVICES=-1` to force CPU fallback.

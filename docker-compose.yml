@@ -62,11 +62,15 @@ services:
       - .env
     environment:
       - LLM_CONFIG_PATH=/config/config.yaml
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - capabilities: [gpu]
+      - HSA_OVERRIDE_GFX_VERSION=${HSA_OVERRIDE_GFX_VERSION:-10.3.0}
+      - HIP_VISIBLE_DEVICES=${HIP_VISIBLE_DEVICES:-0}
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+    group_add:
+      - video
+    security_opt:
+      - seccomp:unconfined
     ports:
       - "${LLM_ENGINE_PORT:-8000}:8000"
     volumes:

@@ -85,3 +85,8 @@ Once Elasticsearch is running, execute `make bootstrap-es` to apply index templa
 ## Lab Primers
 - Request a lab skeleton in chat with `/lab <concept>` (concept optional; defaults to current learning concept).
 - The response includes docker-compose, Makefile, README, and notes. Copy them into a directory or enable auto-generation by setting `RAG_LAB_AUTO_WRITE=1` and `RAG_LAB_OUTPUT_ROOT=/tmp/labs`.
+
+## GPU Acceleration (AMD ROCm)
+- Ensure ROCm drivers are installed on the host and that `/dev/kfd` and `/dev/dri` are accessible to your user (usually by joining the `video` group).
+- The `llm-engine` container now builds llama.cpp with HIP/ROCm support and automatically maps the GPU devices. Set `HSA_OVERRIDE_GFX_VERSION`/`HIP_VISIBLE_DEVICES` if your card reports a different GFX version.
+- If you prefer CPU-only mode, remove the device mappings and GPU environment variables from `docker-compose.yml` or set `HIP_VISIBLE_DEVICES=-1`.

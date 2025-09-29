@@ -3,3 +3,4 @@ uvicorn[standard]==0.27.1
 sentence-transformers==2.6.1
 torch==2.1.2
 pytest==8.1.1
+numpy<2
