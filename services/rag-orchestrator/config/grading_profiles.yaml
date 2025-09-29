@@ -1,0 +1,20 @@
+profiles:
+  default:
+    rubric:
+      - id: coverage
+        weight: 0.4
+        instructions: |
+          Assess whether the learner addressed the key concepts listed in the tuning node summary.
+      - id: application
+        weight: 0.4
+        instructions: |
+          Judge how well the learner connected theory to a practical experiment or scenario.
+      - id: clarity
+        weight: 0.2
+        instructions: |
+          Consider organization, specificity, and whether next steps are unambiguous.
+    pass_threshold: 0.6
+    retry_feedback: |
+      Your response misses some expectations. Highlight the missing pieces, elaborate on the experiment setup, and clarify expected outcomes before resubmitting.
+    pass_feedback: |
+      Solid response—continue to the next concept. Capture a short list of takeaways for future review.

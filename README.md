@@ -69,3 +69,7 @@ To bootstrap Elasticsearch templates after the cluster is running, execute `make
 
 ## Elasticsearch Bootstrap
 Once Elasticsearch is running, execute `make bootstrap-es` to apply index templates and create base indices.
+
+## Grading Configuration
+- Modify `services/rag-orchestrator/config/grading_profiles.yaml` to tweak rubric weights, thresholds, and feedback messaging.
+- Set `RAG_GRADING_PROFILE` in `.env` to switch between profiles.

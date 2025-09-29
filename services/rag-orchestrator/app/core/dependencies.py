@@ -6,6 +6,7 @@ from ..clients.llm import LlmClient
 from ..clients.embedding import EmbeddingClient
 from ..clients.search import SearchClient
 from ..clients.elasticsearch import ElasticsearchClient
+from ..services.grading import ExerciseGrader, load_grading_config
 
 
 @lru_cache()
@@ -32,6 +33,20 @@ def get_search_client(settings: Settings | None = None) -> SearchClient:
 
 
 @lru_cache()
+def get_grading_config(settings: Settings | None = None):
+    settings = settings or get_settings()
+    return load_grading_config(settings.grading_config_path)
+
+
+@lru_cache()
 def get_elasticsearch_client(settings: Settings | None = None) -> ElasticsearchClient:
     settings = settings or get_settings()
     return ElasticsearchClient(base_url=settings.elasticsearch_url)
+
+
+@lru_cache()
+def get_exercise_grader(settings: Settings | None = None):
+    settings = settings or get_settings()
+    config = get_grading_config(settings)
+    profile = config.get(settings.grading_profile)
+    return ExerciseGrader(get_llm_client(settings), profile)

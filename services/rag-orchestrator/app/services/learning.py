@@ -41,16 +41,5 @@ class LearningCoordinator:
             """
         ).strip()
 
-    def evaluate_response(self, answer: str) -> Dict[str, Any]:
-        # Placeholder heuristic until dedicated grading arrives (Step 13).
-        normalized = answer.lower()
-        passed = len(normalized.split()) > 20 or any(keyword in normalized for keyword in ["index", "vector", "relevance", "experiment"])
-        feedback = (
-            "Great - marking this concept complete."
-            if passed
-            else "Try elaborating more: include key takeaways and how you'd apply them."
-        )
-        return {"passed": passed, "feedback": feedback}
-
     def next_index(self) -> int | None:
         return self.index + 1 if self.index + 1 < len(self.plan) else None

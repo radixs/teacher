@@ -9,6 +9,7 @@ from ...core.dependencies import (
     get_llm_client,
     get_search_client,
     get_session_manager,
+    get_exercise_grader,
 )
 from ...models.api import (
     MessageModel,
@@ -73,7 +74,7 @@ async def start_session(
     )
     session_manager.add_message(session.id, assistant_message)
 
-    indices = settings.elasticsearch["indices"]
+    indices = settings.indices
     await elastic_client.store_interaction(
         index=indices["session_interactions"],
         session_id=session.id,
@@ -95,6 +96,7 @@ async def send_message(
     settings: Settings = Depends(get_settings),
     embedding_client=Depends(get_embedding_client),
     elastic_client=Depends(get_elasticsearch_client),
+    exercise_grader=Depends(get_exercise_grader),
 ) -> SessionMessageResponse:
     try:
         session = session_manager.get_session(session_id)
@@ -105,7 +107,7 @@ async def send_message(
     session = session_manager.add_message(session_id, user_message)
 
     embedding = await embedding_client.embed(payload.message)
-    indices = settings.elasticsearch["indices"]
+    indices = settings.indices
     await elastic_client.store_interaction(
         index=indices["session_interactions"],
         session_id=session_id,
@@ -190,11 +192,12 @@ async def send_message(
             raise HTTPException(status_code=400, detail="Learning plan not initialized")
 
         coordinator = LearningCoordinator(plan=plan, index=session.current_concept_index)
-        evaluation = coordinator.evaluate_response(payload.message)
+        concept = coordinator.current_node()
+        evaluation = await exercise_grader.evaluate(concept, payload.message)
         status = "complete" if evaluation["passed"] else "needs_revision"
         session = session_manager.record_learning_outcome(
             session_id=session_id,
-            concept_id=coordinator.current_node()["concept_id"],
+            concept_id=concept["concept_id"],
             status=status,
             feedback=evaluation["feedback"],
         )
@@ -203,11 +206,13 @@ async def send_message(
             index=indices["knowledge_snapshots"],
             session_id=session_id,
             snapshot={
-                "concept_id": coordinator.current_node()["concept_id"],
-                "concept_name": coordinator.current_node()["concept_name"],
+                "concept_id": concept["concept_id"],
+                "concept_name": concept["concept_name"],
                 "status": status,
                 "feedback": evaluation["feedback"],
                 "answer": payload.message,
+                "score": evaluation.get("score"),
+                "highlights": evaluation.get("highlights", []),
             },
             embedding=embedding if evaluation["passed"] else None,
         )
@@ -218,28 +223,28 @@ async def send_message(
             if next_index is not None and session.phase != "learning_complete":
                 coordinator = LearningCoordinator(plan=session.tuning_plan, index=session.current_concept_index)
                 content = (
-                    "Marked previous concept complete. Here's the next concept to focus on:\n\n"
-                    + coordinator.build_overview()
+                    "Marked previous concept complete. Here's the next concept to focus on:\n\n" + coordinator.build_overview()
                 )
                 metadata = {
                     "phase": session.phase,
                     "stage": "learning_next",
                     "concept_id": coordinator.current_node()["concept_id"],
+                    "score": evaluation.get("score"),
                 }
             else:
                 content = (
                     "Congratulations! You've completed all planned concepts. We'll capture a final summary next."
                 )
-                metadata = {"phase": session.phase, "stage": "learning_complete"}
+                metadata = {"phase": session.phase, "stage": "learning_complete", "score": evaluation.get("score")}
         else:
             content = (
-                evaluation["feedback"]
-                + "\n\nRevise your answer considering the exercise criteria and resubmit when ready."
+                evaluation["feedback"] + "\n\nRevise your answer considering the exercise criteria and resubmit when ready."
             )
             metadata = {
                 "phase": session.phase,
                 "stage": "learning_retry",
-                "concept_id": coordinator.current_node()["concept_id"],
+                "concept_id": concept["concept_id"],
+                "score": evaluation.get("score"),
             }
 
         assistant_message = Message(
@@ -258,7 +263,6 @@ async def send_message(
             metadata=assistant_message.metadata,
             phase=session.phase,
         )
-
     else:
         assistant_message = Message(
             role="assistant",

@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     index_dependency_graph: str = "dependency_graph"
     index_session_interactions: str = "session_interactions"
 
+    grading_profile: str = "default"
+    grading_config_path: str = "config/grading_profiles.yaml"
+
     class Config:
         env_prefix = "RAG_"
         env_file = ".env"

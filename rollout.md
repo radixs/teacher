@@ -14,7 +14,7 @@
 | 10 | Implement calibration phase flows (profile capture, diagnostic Q&A, persistence) | completed | Added calibration planner, stateful session flow, ES persistence for answers. |
 | 11 | Implement tuning program generator (dependency graph authoring + storage) | completed | Added tuning generator, ES persistence, session phase transition. |
 | 12 | Implement learning phase (lesson delivery, resource linking, exercise prompts) | completed | Added learning coordinator, lesson messaging, progress tracking + tests. |
-| 13 | Implement exercise grading pipeline + configurable rubrics | pending |  |
+| 13 | Implement exercise grading pipeline + configurable rubrics | completed | Added LLM-backed grader, YAML rubrics, learning flow integration + tests. |
 | 14 | Build lab primer generator + temp recipe handling | pending |  |
 | 15 | Implement automated test suites (`make test`: containers, API with stubs, RAG integration, UI e2e) | pending |  |
 | 16 | Finalize documentation (README usage guide, update rollout + agents, polish) | pending |  |

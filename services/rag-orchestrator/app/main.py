@@ -9,6 +9,7 @@ from .core.dependencies import (
     get_llm_client,
     get_search_client,
     get_elasticsearch_client,
+    get_exercise_grader,
 )
 
 settings = get_settings()
@@ -30,6 +31,7 @@ async def startup_event() -> None:
     _ = get_embedding_client()
     _ = get_search_client()
     _ = get_elasticsearch_client()
+    _ = get_exercise_grader()
 
 
 @app.on_event("shutdown")
@@ -38,3 +40,4 @@ async def shutdown_event() -> None:
     await get_embedding_client().close()
     await get_search_client().close()
     await get_elasticsearch_client().close()
+    # Exercise grader reuses LLM client; nothing additional to close.

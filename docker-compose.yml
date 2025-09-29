@@ -51,6 +51,7 @@ services:
       - "${RAG_API_PORT:-9000}:9000"
     volumes:
       - ./services/rag-orchestrator/app:/usr/src/app/app
+      - ./services/rag-orchestrator/config:/usr/src/app/config
     networks:
       - appnet
 

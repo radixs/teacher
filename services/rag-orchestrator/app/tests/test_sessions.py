@@ -5,6 +5,7 @@ from app.core.dependencies import (
     get_elasticsearch_client,
     get_embedding_client,
     get_session_manager,
+    get_exercise_grader,
 )
 from app.services.session_manager import SessionManager
 
@@ -12,6 +13,16 @@ from app.services.session_manager import SessionManager
 class FakeEmbeddingClient:
     async def embed(self, text: str):
         return [0.0, 0.1, 0.2]
+
+
+class FakeGrader:
+    async def evaluate(self, concept, answer):
+        return {
+            "passed": True,
+            "score": 0.9,
+            "feedback": "Looks good.",
+            "highlights": [concept.get("concept_name")],
+        }
 
 
 class FakeElasticsearchClient:
@@ -36,6 +47,7 @@ def setup_module(_module):
     app.dependency_overrides[get_embedding_client] = lambda: FakeEmbeddingClient()
     app.dependency_overrides[get_elasticsearch_client] = lambda: FakeElasticsearchClient()
     app.dependency_overrides[get_session_manager] = override_session_manager
+    app.dependency_overrides[get_exercise_grader] = lambda: FakeGrader()
 
 
 def teardown_module(_module):
