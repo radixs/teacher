@@ -5,6 +5,7 @@ from ..services.session_manager import SessionManager
 from ..clients.llm import LlmClient
 from ..clients.embedding import EmbeddingClient
 from ..clients.search import SearchClient
+from ..clients.elasticsearch import ElasticsearchClient
 
 
 @lru_cache()
@@ -28,3 +29,9 @@ def get_embedding_client(settings: Settings | None = None) -> EmbeddingClient:
 def get_search_client(settings: Settings | None = None) -> SearchClient:
     settings = settings or get_settings()
     return SearchClient(base_url=settings.search_agent_url)
+
+
+@lru_cache()
+def get_elasticsearch_client(settings: Settings | None = None) -> ElasticsearchClient:
+    settings = settings or get_settings()
+    return ElasticsearchClient(base_url=settings.elasticsearch_url)

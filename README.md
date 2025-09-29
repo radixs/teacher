@@ -3,6 +3,7 @@
 This repository hosts a containerized learning companion that guides users through custom training paths using Retrieval-Augmented Generation (RAG) backed by Elasticsearch. The stack comprises a Vue 3 SPA, Laravel 12 API, and Python microservices coordinating local LLM + embedding models that run comfortably on an AMD Ryzen 5 7600 / Radeon RX 6600 workstation.
 
 ## Status
+Calibration flow implemented: sessions begin with guided questions whose answers are stored in Elasticsearch for later tuning.
 The project is in the bootstrap phase. Core services, orchestration scripts, and documentation are being scaffolded according to the rollout plan in `rollout.md`.
 
 ## Prerequisites

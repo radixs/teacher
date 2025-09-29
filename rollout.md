@@ -11,7 +11,7 @@
 | 7 | Package embedding worker using `bge-base-en-v1.5` and expose embedding endpoint | completed | Added FastAPI embed service, model caching, Docker image + compose volume. |
 | 8 | Configure Elasticsearch 9.1.4 container, index templates, and bootstrap scripts | completed | Added index templates, bootstrap script, compose volume + Make target. |
 | 9 | Implement DuckDuckGo search agent + web scraper for resource ingestion | completed | Added FastAPI search service, scraper, Docker image, compose wiring. |
-| 10 | Implement calibration phase flows (profile capture, diagnostic Q&A, persistence) | pending |  |
+| 10 | Implement calibration phase flows (profile capture, diagnostic Q&A, persistence) | completed | Added calibration planner, stateful session flow, ES persistence for answers. |
 | 11 | Implement tuning program generator (dependency graph authoring + storage) | pending |  |
 | 12 | Implement learning phase (lesson delivery, resource linking, exercise prompts) | pending |  |
 | 13 | Implement exercise grading pipeline + configurable rubrics | pending |  |

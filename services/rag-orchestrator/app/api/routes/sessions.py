@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from ...core.config import Settings, get_settings
 from ...core.dependencies import (
+    get_elasticsearch_client,
     get_embedding_client,
     get_llm_client,
     get_search_client,
@@ -17,6 +18,7 @@ from ...models.api import (
     SessionStartRequest,
 )
 from ...models.session import Message
+from ...services.calibration import CalibrationPlanner
 from ...services.session_manager import SessionManager
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
@@ -48,27 +50,37 @@ async def start_session(
     payload: SessionStartRequest,
     session_manager: SessionManager = Depends(get_session_manager),
     settings: Settings = Depends(get_settings),
-    llm_client=Depends(get_llm_client),
+    elastic_client=Depends(get_elasticsearch_client),
     embedding_client=Depends(get_embedding_client),
     search_client=Depends(get_search_client),
+    llm_client=Depends(get_llm_client),  # kept for future orchestration hooks
 ) -> SessionModel:
-    # TODO: leverage embedding_client and search_client to prime session context.
-    _ = embedding_client, search_client, settings
+    _ = embedding_client, search_client, llm_client  # reserved for future use
+
     session = session_manager.create_session(goal=payload.goal, profile=payload.profile)
 
-    llm_response = await llm_client.generate(
-        prompt=(
-            "The user wants to learn {goal}. Start calibration with a single welcoming question."
-        ).format(goal=payload.goal)
-    )
+    question = session_manager.next_calibration_question(session.id)
+    if question is None:
+        question = "Let's begin with a quick summary of what you already know."
 
-    content = llm_response.get("content") or llm_response.get("text") or "Welcome! Let's begin by clarifying what you already know about this goal."
     assistant_message = Message(
         role="assistant",
-        content=content,
-        metadata={"phase": session.phase},
+        content=question,
+        metadata={"phase": session.phase, "stage": "calibration"},
     )
     session_manager.add_message(session.id, assistant_message)
+
+    # Persist assistant prompt without embedding
+    indices = settings.elasticsearch["indices"]
+    await elastic_client.store_interaction(
+        index=indices["session_interactions"],
+        session_id=session.id,
+        role="assistant",
+        content=assistant_message.content,
+        turn=session.current_turn(),
+        metadata=assistant_message.metadata,
+        phase=session.phase,
+    )
 
     return _serialize_session(session_manager.get_session(session.id))
 
@@ -78,7 +90,9 @@ async def send_message(
     session_id: str,
     payload: SessionMessageRequest,
     session_manager: SessionManager = Depends(get_session_manager),
-    llm_client=Depends(get_llm_client),
+    settings: Settings = Depends(get_settings),
+    embedding_client=Depends(get_embedding_client),
+    elastic_client=Depends(get_elasticsearch_client),
 ) -> SessionMessageResponse:
     try:
         session = session_manager.get_session(session_id)
@@ -88,21 +102,67 @@ async def send_message(
     user_message = Message(role="user", content=payload.message, metadata=payload.metadata)
     session_manager.add_message(session_id, user_message)
 
-    llm_response = await llm_client.generate(
-        prompt=payload.message,
-        context={
-            "phase": session.phase,
-            "messages": [msg.__dict__ for msg in session.messages],
-        },
+    embedding = await embedding_client.embed(payload.message)
+    indices = settings.elasticsearch["indices"]
+    await elastic_client.store_interaction(
+        index=indices["session_interactions"],
+        session_id=session_id,
+        role="user",
+        content=payload.message,
+        turn=session.current_turn(),
+        embedding=embedding,
+        metadata=payload.metadata,
+        phase=session.phase,
     )
 
-    content = llm_response.get("content") or llm_response.get("text") or "Acknowledged. Further orchestration logic will arrive in a later step."
-    assistant_message = Message(
-        role="assistant",
-        content=content,
-        metadata={"phase": session.phase},
-    )
+    session_manager.record_calibration_answer(session_id, payload.message)
+
+    # Persist calibration snapshot of the latest Q&A if available
+    calibration_history = session.calibration_history
+    if calibration_history:
+        latest = calibration_history[-1]
+        if latest.get("answer"):
+            planner = CalibrationPlanner(goal=session.goal, profile=session.profile)
+            snapshot = planner.synthesize_snapshot(latest["question"], latest["answer"])
+            await elastic_client.store_snapshot(
+                index=indices["knowledge_snapshots"],
+                session_id=session_id,
+                snapshot=snapshot,
+                embedding=embedding,
+            )
+
+    next_question = session_manager.next_calibration_question(session_id)
+
+    if next_question:
+        assistant_message = Message(
+            role="assistant",
+            content=next_question,
+            metadata={"phase": session.phase, "stage": "calibration"},
+        )
+    else:
+        session = session_manager.get_session(session_id)
+        summary_lines = [
+            f"- {item['question']} → {item.get('answer', 'pending')}"
+            for item in session.calibration_history
+        ]
+        summary = "Calibration complete. Here's what we've captured so far:\n" + "\n".join(summary_lines)
+        assistant_message = Message(
+            role="assistant",
+            content=summary,
+            metadata={"phase": session.phase, "stage": "calibration_complete"},
+        )
+
     session_manager.add_message(session_id, assistant_message)
+
+    await elastic_client.store_interaction(
+        index=indices["session_interactions"],
+        session_id=session_id,
+        role="assistant",
+        content=assistant_message.content,
+        turn=session.current_turn(),
+        metadata=assistant_message.metadata,
+        phase=session.phase,
+    )
 
     updated_session = session_manager.get_session(session_id)
 

@@ -8,6 +8,7 @@ from .core.dependencies import (
     get_embedding_client,
     get_llm_client,
     get_search_client,
+    get_elasticsearch_client,
 )
 
 settings = get_settings()
@@ -28,6 +29,7 @@ async def startup_event() -> None:
     _ = get_llm_client()
     _ = get_embedding_client()
     _ = get_search_client()
+    _ = get_elasticsearch_client()
 
 
 @app.on_event("shutdown")
@@ -35,3 +37,4 @@ async def shutdown_event() -> None:
     await get_llm_client().close()
     await get_embedding_client().close()
     await get_search_client().close()
+    await get_elasticsearch_client().close()
