@@ -10,7 +10,8 @@ services:
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     volumes:
-      - backend_storage:/var/www
+      - ./services/backend/app:/var/www/html
+      - ./services/backend/docker/php.ini:/usr/local/etc/php/conf.d/custom.ini:ro
     networks:
       - appnet
 
@@ -102,7 +103,6 @@ services:
 
 volumes:
   es_data:
-  backend_storage:
 
 networks:
   appnet:
