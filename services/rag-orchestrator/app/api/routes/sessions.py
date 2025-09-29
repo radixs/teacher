@@ -19,6 +19,7 @@ from ...models.api import (
 )
 from ...models.session import Message
 from ...services.calibration import CalibrationPlanner
+from ...services.tuning import TuningProgramGenerator
 from ...services.session_manager import SessionManager
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
@@ -42,6 +43,7 @@ def _serialize_session(session) -> SessionModel:
         messages=[_serialize_message(msg) for msg in session.messages],
         created_at=session.created_at,
         updated_at=session.updated_at,
+        tuning_plan=session.tuning_plan or [],
     )
 
 
@@ -100,7 +102,7 @@ async def send_message(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
     user_message = Message(role="user", content=payload.message, metadata=payload.metadata)
-    session_manager.add_message(session_id, user_message)
+    session = session_manager.add_message(session_id, user_message)
 
     embedding = await embedding_client.embed(payload.message)
     indices = settings.elasticsearch["indices"]
@@ -117,7 +119,6 @@ async def send_message(
 
     session_manager.record_calibration_answer(session_id, payload.message)
 
-    # Persist calibration snapshot of the latest Q&A if available
     calibration_history = session.calibration_history
     if calibration_history:
         latest = calibration_history[-1]
@@ -141,18 +142,33 @@ async def send_message(
         )
     else:
         session = session_manager.get_session(session_id)
+        generator = TuningProgramGenerator(goal=session.goal, calibration_history=session.calibration_history)
+        plan = generator.generate()
+        session = session_manager.set_tuning_plan(session_id, plan)
+
+        for node in plan:
+            await elastic_client.store_dependency_node(
+                index=indices["dependency_graph"],
+                node={**node, "session_id": session_id},
+            )
+
         summary_lines = [
             f"- {item['question']} → {item.get('answer', 'pending')}"
             for item in session.calibration_history
         ]
-        summary = "Calibration complete. Here's what we've captured so far:\n" + "\n".join(summary_lines)
+        summary = (
+            "Calibration complete. Generated tuning roadmap with "
+            f"{len(plan)} concepts. Here's what we've captured so far:
+" + "
+".join(summary_lines)
+        )
         assistant_message = Message(
             role="assistant",
             content=summary,
-            metadata={"phase": session.phase, "stage": "calibration_complete"},
+            metadata={"phase": session.phase, "stage": "tuning_ready"},
         )
 
-    session_manager.add_message(session_id, assistant_message)
+    session = session_manager.add_message(session_id, assistant_message)
 
     await elastic_client.store_interaction(
         index=indices["session_interactions"],
@@ -170,6 +186,7 @@ async def send_message(
         session=_serialize_session(updated_session),
         last_message=_serialize_message(assistant_message),
     )
+
 
 
 @router.get("/{session_id}", response_model=SessionModel)

@@ -49,6 +49,7 @@ def test_start_session_creates_session():
     assert payload["goal"] == "Learn ESRE"
     assert payload["messages"][-1]["role"] == "assistant"
     assert payload["messages"][-1]["metadata"]["stage"] == "calibration"
+    assert payload.get("tuning_plan") == []
 
 
 def test_calibration_progression_moves_to_tuning():
@@ -56,7 +57,7 @@ def test_calibration_progression_moves_to_tuning():
     session_id = start.json()["id"]
 
     # answer enough questions to exhaust calibration queue
-    for i in range(6):
+    for i in range(10):
         response = client.post(
             f"/v1/sessions/{session_id}",
             json={"message": f"answer {i}"},
@@ -64,4 +65,5 @@ def test_calibration_progression_moves_to_tuning():
         assert response.status_code == 200
 
     data = client.get(f"/v1/sessions/{session_id}").json()
-    assert data["phase"] in {"calibration", "tuning"}
+    assert data["phase"] == "tuning"
+    assert len(data.get("tuning_plan", [])) > 0

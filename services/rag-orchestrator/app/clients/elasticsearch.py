@@ -54,5 +54,10 @@ class ElasticsearchClient:
 
         await self._client.post(f"/{index}/_doc", json=payload)
 
+    async def store_dependency_node(self, index: str, node: Dict[str, Any]) -> None:
+        payload = dict(node)
+        payload.setdefault("created_at", datetime.utcnow().isoformat())
+        await self._client.post(f"/{index}/_doc", json=payload)
+
     async def close(self) -> None:
         await self._client.aclose()

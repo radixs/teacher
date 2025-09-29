@@ -22,6 +22,7 @@ class Session:
     messages: List[Message] = field(default_factory=list)
     calibration_queue: List[str] = field(default_factory=list)
     calibration_history: List[dict[str, Any]] = field(default_factory=list)
+    tuning_plan: List[dict[str, Any]] = field(default_factory=list)
     created_at: datetime = field(default_factory=datetime.utcnow)
     updated_at: datetime = field(default_factory=datetime.utcnow)
 

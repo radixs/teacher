@@ -31,6 +31,7 @@ class SessionModel(BaseModel):
     messages: List[MessageModel]
     created_at: datetime
     updated_at: datetime
+    tuning_plan: Optional[List[dict[str, Any]]] = None
 
 
 class SessionMessageResponse(BaseModel):

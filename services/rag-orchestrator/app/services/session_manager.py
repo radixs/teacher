@@ -26,7 +26,6 @@ class SessionManager:
     def next_calibration_question(self, session_id: str) -> str | None:
         session = self._require_session(session_id)
         if not session.calibration_queue:
-            session.phase = "tuning"
             return None
         question = session.calibration_queue.pop(0)
         session.calibration_history.append({"question": question, "answer": None})
@@ -46,6 +45,12 @@ class SessionManager:
 
     def get_session(self, session_id: str) -> Session:
         return self._require_session(session_id)
+
+    def set_tuning_plan(self, session_id: str, plan: list[dict]) -> Session:
+        session = self._require_session(session_id)
+        session.tuning_plan = plan
+        session.phase = "tuning"
+        return session
 
     def _require_session(self, session_id: str) -> Session:
         session = self._store.get(session_id)
