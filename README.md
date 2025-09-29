@@ -86,7 +86,82 @@ Once Elasticsearch is running, execute `make bootstrap-es` to apply index templa
 - Request a lab skeleton in chat with `/lab <concept>` (concept optional; defaults to current learning concept).
 - The response includes docker-compose, Makefile, README, and notes. Copy them into a directory or enable auto-generation by setting `RAG_LAB_AUTO_WRITE=1` and `RAG_LAB_OUTPUT_ROOT=/tmp/labs`.
 
+
 ## GPU Acceleration (AMD ROCm)
-- Ensure ROCm drivers are installed on the host and that `/dev/kfd` and `/dev/dri` are accessible to your user (usually by joining the `video` group).
-- The `llm-engine` container now builds llama.cpp with HIP/ROCm support and automatically maps the GPU devices. Set `HSA_OVERRIDE_GFX_VERSION`/`HIP_VISIBLE_DEVICES` if your card reports a different GFX version.
-- If you prefer CPU-only mode, remove the device mappings and GPU environment variables from `docker-compose.yml` or set `HIP_VISIBLE_DEVICES=-1`.
+The host already loads the `amdgpu` kernel driver, and `lspci` identifies a Radeon RX 6600 (Navi 23). No ROCm userland packages are installed yet, so use the following Ubuntu 24.04 guidance when you want GPU acceleration.
+
+### Verify the GPU stack
+```bash
+lspci -nn | grep -E "VGA|Display"  # should list the Radeon RX 6600 (gfx1032)
+lsmod | grep amdgpu                       # confirm the kernel module is loaded
+sudo dmesg | grep -i amdgpu | tail -20    # inspect recent driver messages
+```
+
+### Check for existing ROCm packages
+```bash
+dpkg -l | grep -i rocm
+which rocminfo && rocminfo | head
+which hipcc && hipcc --version
+```
+If these commands report nothing, ROCm userland components are not yet present.
+
+### Install/upgrade ROCm 5.7.0 (Ubuntu 24.04 example)
+ROCm 5.7 officially supports the RX 6600. Confirm the available release string first, then install:
+```bash
+# Discover ROCm versions published in the configured repository
+apt-cache policy rocm-libs | head
+
+# Refresh AMD + Ubuntu repositories
+sudo apt update
+
+# Install ROCm runtime and HIP without re-installing kernel DKMS modules
+sudo amdgpu-install --usecase=rocm,hip -y --no-dkms --rocmrelease=5.7.0 --accept-eula
+
+# Optional diagnostics tools
+sudo apt install rocminfo rocm-hip-runtime-dev rocm-smi librocm-smi64-1
+
+# Allow your user (and Docker) to access GPU device nodes
+sudo usermod -a -G video,render $USER
+newgrp video   # reload video group without full relog
+newgrp render  # load render group (or log out/in)
+```
+If `rocminfo` still reports `/dev/kfd` permission errors, run `groups` to confirm membership and log out/in if necessary.
+
+Adjust `--rocmrelease` to match the `apt-cache` candidate and consult AMD's compatibility matrix if you change GPUs.
+
+### Post-install validation
+```bash
+rocminfo | less   # expect gfx1032 for an RX 6600
+rocm-smi          # temperature, clocks, fan speed
+hipcc --version   # confirms HIP toolchain availability
+```
+If these binaries are not in your PATH, check `/opt/rocm-*/bin` for the versioned symlinks installed by `amdgpu-install`.
+The commands should succeed and report ROCM 5.7.0 (or newer) with the RX 6600 detected; `hipcc --version` prints warnings that can be ignored.
+
+### Docker integration checklist (step-by-step)
+1. **Expose GPU device files** – in `docker-compose.yml`, ensure the `llm-engine` service contains:
+   ```yaml
+   devices:
+     - /dev/kfd:/dev/kfd
+     - /dev/dri:/dev/dri
+   group_add:
+     - video
+   ```
+   This gives the container access to the GPU driver nodes.
+2. **Allow Docker to access the GPU** – add your user to the `video` and `render` groups so containers inherit the permissions:
+   ```bash
+   sudo usermod -a -G video,render $USER
+   newgrp video
+   newgrp render
+   ```
+   If you have customised Docker to run as a non-root user, identify it with `ps aux | grep dockerd` and add that account too; by default Docker runs as `root` so no extra step is needed. Logging out/back in achieves the same effect.
+3. **Set the correct GFX override** – if `rocminfo` shows a different GFX code, update `.env` and compose:
+   ```bash
+   echo HSA_OVERRIDE_GFX_VERSION=gfx1032 >> .env
+   ```
+   Then reference `$HSA_OVERRIDE_GFX_VERSION` under the `environment:` section of `llm-engine` in `docker-compose.yml`.
+4. **Rebuild after ROCm updates** – whenever ROCm packages change on the host, rebuild the image so it links against the matching runtime:
+   ```bash
+   docker compose build llm-engine
+   docker compose up -d llm-engine
+   ```

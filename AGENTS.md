@@ -43,3 +43,4 @@
 - Lab primers: trigger with `/lab <topic>`; auto-write to `RAG_LAB_OUTPUT_ROOT` when `RAG_LAB_AUTO_WRITE=1`.
 - `make test` runs: backend `php artisan test`, rag-orchestrator + search-agent `pytest`, frontend build smoke; extend as stack evolves.
 - GPU usage: llama.cpp built with HIP; containers map `/dev/kfd` and `/dev/dri` and expect ROCm drivers. Set `HIP_VISIBLE_DEVICES=-1` to force CPU fallback.
+- When using GPU mode, host runs Ubuntu 24.04 with a Radeon RX 6600 (gfx1032); follow README ROCm section for install/verification commands.
