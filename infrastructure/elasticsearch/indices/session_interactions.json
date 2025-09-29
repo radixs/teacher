@@ -1,0 +1,29 @@
+{
+  "index_patterns": ["session_interactions"],
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0,
+      "index": {
+        "knn": true
+      }
+    },
+    "mappings": {
+      "dynamic": "strict",
+      "properties": {
+        "session_id": {"type": "keyword"},
+        "turn": {"type": "integer"},
+        "role": {"type": "keyword"},
+        "content": {"type": "text"},
+        "embedding": {
+          "type": "dense_vector",
+          "dims": 768,
+          "index": true,
+          "similarity": "cosine"
+        },
+        "metadata": {"type": "object", "enabled": true},
+        "created_at": {"type": "date"}
+      }
+    }
+  }
+}

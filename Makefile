@@ -38,3 +38,6 @@ lint:
 # Placeholder test target; will fan out to service-specific suites as implemented
 test:
 	./scripts/test.sh run
+
+bootstrap-es:
+	scripts/bootstrap-elasticsearch.sh

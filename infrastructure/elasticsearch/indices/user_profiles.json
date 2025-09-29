@@ -1,0 +1,30 @@
+{
+  "index_patterns": ["user_profiles"],
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0,
+      "index": {
+        "query": {
+          "default_field": "content"
+        }
+      }
+    },
+    "mappings": {
+      "dynamic": "strict",
+      "properties": {
+        "user_id": {"type": "keyword"},
+        "goal": {"type": "text"},
+        "experience_summary": {"type": "text"},
+        "knowledge_vector": {
+          "type": "dense_vector",
+          "dims": 768,
+          "index": true,
+          "similarity": "cosine"
+        },
+        "created_at": {"type": "date"},
+        "updated_at": {"type": "date"}
+      }
+    }
+  }
+}

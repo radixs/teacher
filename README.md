@@ -27,6 +27,8 @@ Populate credentials and tune resource-specific variables as needed.
 - `make test` – execute the verification suite (to be implemented).
 
 ## Service Overview
+
+After bringing the stack up, run `make bootstrap-es` to apply Elasticsearch index templates.
 | Service | Role | Tech |
 | --- | --- | --- |
 | frontend | Chat UI, lesson flow, progress visualizations | Vue 3 + Vuex (Vite) |
@@ -59,3 +61,8 @@ Refer to `rollout.md` for the chronological implementation plan and to `AGENTS.m
 - Fill in Dockerfiles and service bootstraps per rollout steps.
 - Implement automated tests mapped to `make test`.
 - Document model download and caching workflow once services are in place.
+
+To bootstrap Elasticsearch templates after the cluster is running, execute `make bootstrap-es`.
+
+## Elasticsearch Bootstrap
+Once Elasticsearch is running, execute `make bootstrap-es` to apply index templates and create base indices.

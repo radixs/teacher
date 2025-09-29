@@ -106,6 +106,7 @@ services:
     volumes:
       - es_data:/usr/share/elasticsearch/data
       - ./infrastructure/elasticsearch/config:/usr/share/elasticsearch/config
+      - ./infrastructure/elasticsearch/indices:/usr/share/elasticsearch/indices:ro
     ports:
       - "${ELASTICSEARCH_PORT:-9200}:9200"
       - "${ELASTICSEARCH_TRANSPORT_PORT:-9300}:9300"

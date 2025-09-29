@@ -1,0 +1,30 @@
+{
+  "index_patterns": ["learning_resources"],
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0,
+      "index": {
+        "knn": true
+      }
+    },
+    "mappings": {
+      "dynamic": "false",
+      "properties": {
+        "title": {"type": "text"},
+        "url": {"type": "keyword"},
+        "source": {"type": "keyword"},
+        "type": {"type": "keyword"},
+        "summary": {"type": "text"},
+        "embedding": {
+          "type": "dense_vector",
+          "dims": 768,
+          "index": true,
+          "similarity": "cosine"
+        },
+        "tags": {"type": "keyword"},
+        "created_at": {"type": "date"}
+      }
+    }
+  }
+}
