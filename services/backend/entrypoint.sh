@@ -13,5 +13,9 @@ fi
 
 php artisan key:generate --force
 
+if [ "$#" -gt 0 ]; then
+  exec "$@"
+fi
+
 PORT=${BACKEND_INTERNAL_PORT:-8080}
 exec php artisan serve --host=0.0.0.0 --port="${PORT}"

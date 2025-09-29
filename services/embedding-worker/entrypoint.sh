@@ -9,4 +9,8 @@ CACHE_DIR=${EMBEDDING_CACHE_DIR:-/models}
 mkdir -p "$CACHE_DIR"
 export SENTENCE_TRANSFORMERS_HOME="$CACHE_DIR"
 
+if [ "$#" -gt 0 ]; then
+  exec "$@"
+fi
+
 uvicorn app.main:app --host 0.0.0.0 --port "${EMBEDDING_PORT:-9100}"
