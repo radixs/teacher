@@ -9,6 +9,14 @@ Learning phase scaffolding: each concept exposes resources + exercises and advan
 The project is in the bootstrap phase. Core services, orchestration scripts, and documentation are being scaffolded according to the rollout plan in `rollout.md`.
 
 ## Prerequisites
+
+## Quick Start
+1. `cp .env.dist .env` and tweak ports/paths as desired.
+2. Download or cache models ahead of time if needed; otherwise the first `make up` will fetch them.
+3. Run `make build` to build all images (optional, compose will auto-build).
+4. Start the stack with `make up`; Vue frontend is on `http://localhost:${FRONTEND_PORT:-3000}` and Laravel API on `http://localhost:${BACKEND_PORT:-8080}`.
+5. Apply Elasticsearch templates once the cluster is up: `make bootstrap-es`.
+6. Run `make test` to execute backend/Python unit suites and a frontend build smoke.
 - Docker Engine 24+
 - Docker Compose plugin 2.20+
 - GNU Make 4+
