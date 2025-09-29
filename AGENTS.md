@@ -40,3 +40,4 @@
 ## Session Resilience
 - User’s OpenAI Plus plan may interrupt long sessions; keep actionable notes in `rollout.md` and this file so progress is easy to resume.
 - Grading config lives at `services/rag-orchestrator/config/grading_profiles.yaml`; ensure prompts demand JSON with passed/score/feedback/highlights.
+- Lab primers: trigger with `/lab <topic>`; auto-write to `RAG_LAB_OUTPUT_ROOT` when `RAG_LAB_AUTO_WRITE=1`.

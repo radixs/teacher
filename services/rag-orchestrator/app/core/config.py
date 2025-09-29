@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     grading_profile: str = "default"
     grading_config_path: str = "config/grading_profiles.yaml"
 
+    lab_template_dir: str = "lab_templates"
+    lab_output_root: str | None = None
+    lab_auto_write: bool = False
+
     class Config:
         env_prefix = "RAG_"
         env_file = ".env"

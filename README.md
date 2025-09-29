@@ -73,3 +73,7 @@ Once Elasticsearch is running, execute `make bootstrap-es` to apply index templa
 ## Grading Configuration
 - Modify `services/rag-orchestrator/config/grading_profiles.yaml` to tweak rubric weights, thresholds, and feedback messaging.
 - Set `RAG_GRADING_PROFILE` in `.env` to switch between profiles.
+
+## Lab Primers
+- Request a lab skeleton in chat with `/lab <concept>` (concept optional; defaults to current learning concept).
+- The response includes docker-compose, Makefile, README, and notes. Copy them into a directory or enable auto-generation by setting `RAG_LAB_AUTO_WRITE=1` and `RAG_LAB_OUTPUT_ROOT=/tmp/labs`.

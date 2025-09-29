@@ -10,6 +10,7 @@ from .core.dependencies import (
     get_search_client,
     get_elasticsearch_client,
     get_exercise_grader,
+    get_lab_primer,
 )
 
 settings = get_settings()
@@ -32,6 +33,7 @@ async def startup_event() -> None:
     _ = get_search_client()
     _ = get_elasticsearch_client()
     _ = get_exercise_grader()
+    _ = get_lab_primer()
 
 
 @app.on_event("shutdown")

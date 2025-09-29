@@ -97,6 +97,7 @@ async def send_message(
     embedding_client=Depends(get_embedding_client),
     elastic_client=Depends(get_elasticsearch_client),
     exercise_grader=Depends(get_exercise_grader),
+    lab_primer=Depends(get_lab_primer),
 ) -> SessionMessageResponse:
     try:
         session = session_manager.get_session(session_id)
@@ -106,8 +107,66 @@ async def send_message(
     user_message = Message(role="user", content=payload.message, metadata=payload.metadata)
     session = session_manager.add_message(session_id, user_message)
 
-    embedding = await embedding_client.embed(payload.message)
+    stripped_message = payload.message.strip()
     indices = settings.indices
+
+    if stripped_message.startswith("/lab"):
+        lab_arg = stripped_message.split(maxsplit=1)
+        requested_concept = lab_arg[1].strip() if len(lab_arg) == 2 else None
+        if not requested_concept:
+            if session.phase == "learning" and session.tuning_plan:
+                requested_concept = session.tuning_plan[session.current_concept_index]["concept_name"]
+            else:
+                requested_concept = session.goal
+
+        lab_payload = lab_primer.generate(requested_concept, session.goal)
+        summary = lab_payload.pop("summary")
+        code_blocks = []
+        for filename, content in lab_payload.items():
+            fence = "yaml" if filename.endswith(".yml") or filename.endswith(".yaml") else "makefile" if filename.lower() == "makefile" else "markdown" if filename.endswith(".md") else "text"
+            code_blocks.append(f"```{fence}
+# {filename}
+{content}
+```")
+        response_body = "
+
+".join([summary] + code_blocks)
+
+        await elastic_client.store_interaction(
+            index=indices["session_interactions"],
+            session_id=session_id,
+            role="user",
+            content=payload.message,
+            turn=session.current_turn(),
+            embedding=None,
+            metadata={**(payload.metadata or {}), "command": "lab"},
+            phase=session.phase,
+        )
+
+        assistant_message = Message(
+            role="assistant",
+            content=response_body,
+            metadata={"phase": session.phase, "stage": "lab_primer", "lab_concept": requested_concept},
+        )
+        session = session_manager.add_message(session_id, assistant_message)
+
+        await elastic_client.store_interaction(
+            index=indices["session_interactions"],
+            session_id=session_id,
+            role="assistant",
+            content=assistant_message.content,
+            turn=session.current_turn(),
+            metadata=assistant_message.metadata,
+            phase=session.phase,
+        )
+
+        updated_session = session_manager.get_session(session_id)
+        return SessionMessageResponse(
+            session=_serialize_session(updated_session),
+            last_message=_serialize_message(assistant_message),
+        )
+
+    embedding = await embedding_client.embed(payload.message)
     await elastic_client.store_interaction(
         index=indices["session_interactions"],
         session_id=session_id,

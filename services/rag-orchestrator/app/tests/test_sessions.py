@@ -108,3 +108,16 @@ def test_learning_evaluation_advances_concept():
     assert data["session"]["phase"] in {"learning", "learning_complete"}
     # assistant encourages next steps or completion
     assert data["last_message"]["metadata"]["stage"] in {"learning_next", "learning_complete"}
+
+def test_lab_primer_returns_recipe():
+    start = client.post("/v1/sessions", json={"goal": "Learn ESRE"})
+    session_id = start.json()["id"]
+
+    response = client.post(
+        f"/v1/sessions/{session_id}",
+        json={"message": "/lab foundations"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["last_message"]["metadata"]["stage"] == "lab_primer"
+    assert "docker-compose.yml" in data["last_message"]["content"]

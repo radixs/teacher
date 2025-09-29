@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 
 from .config import Settings, get_settings
 from ..services.session_manager import SessionManager
@@ -7,6 +8,7 @@ from ..clients.embedding import EmbeddingClient
 from ..clients.search import SearchClient
 from ..clients.elasticsearch import ElasticsearchClient
 from ..services.grading import ExerciseGrader, load_grading_config
+from ..services.lab_primer import LabPrimer
 
 
 @lru_cache()
@@ -50,3 +52,11 @@ def get_exercise_grader(settings: Settings | None = None):
     config = get_grading_config(settings)
     profile = config.get(settings.grading_profile)
     return ExerciseGrader(get_llm_client(settings), profile)
+
+
+@lru_cache()
+def get_lab_primer(settings: Settings | None = None) -> LabPrimer:
+    settings = settings or get_settings()
+    template_dir = Path(settings.lab_template_dir).resolve()
+    output_root = Path(settings.lab_output_root).resolve() if settings.lab_output_root else None
+    return LabPrimer(template_dir=template_dir, output_root=output_root, auto_write=settings.lab_auto_write)
