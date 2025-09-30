@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Depends, HTTPException, status
 
 from ...core.config import Settings, get_settings
 from ...core.dependencies import (
@@ -10,7 +12,14 @@ from ...core.dependencies import (
     get_search_client,
     get_session_manager,
     get_exercise_grader,
+    get_lab_primer,
 )
+from ...clients.elasticsearch import ElasticsearchClient
+from ...clients.embedding import EmbeddingClient
+from ...clients.llm import LlmClient
+from ...clients.search import SearchClient
+from ...services.grading import ExerciseGrader
+from ...services.lab_primer import LabPrimer
 from ...models.api import (
     MessageModel,
     SessionMessageRequest,
@@ -25,6 +34,17 @@ from ...services.tuning import TuningProgramGenerator
 from ...services.session_manager import SessionManager
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
+
+SessionStartPayload = Annotated[SessionStartRequest, Body(..., embed=False)]
+SessionMessagePayload = Annotated[SessionMessageRequest, Body(..., embed=False)]
+SessionManagerDep = Annotated[SessionManager, Depends(get_session_manager)]
+SettingsDep = Annotated[Settings, Depends(get_settings)]
+ElasticClientDep = Annotated[ElasticsearchClient, Depends(get_elasticsearch_client)]
+EmbeddingClientDep = Annotated[EmbeddingClient, Depends(get_embedding_client)]
+SearchClientDep = Annotated[SearchClient, Depends(get_search_client)]
+LlmClientDep = Annotated[LlmClient, Depends(get_llm_client)]
+ExerciseGraderDep = Annotated[ExerciseGrader, Depends(get_exercise_grader)]
+LabPrimerDep = Annotated[LabPrimer, Depends(get_lab_primer)]
 
 
 def _serialize_message(message: Message) -> MessageModel:
@@ -51,13 +71,13 @@ def _serialize_session(session) -> SessionModel:
 
 @router.post("", response_model=SessionModel)
 async def start_session(
-    payload: SessionStartRequest,
-    session_manager: SessionManager = Depends(get_session_manager),
-    settings: Settings = Depends(get_settings),
-    elastic_client=Depends(get_elasticsearch_client),
-    embedding_client=Depends(get_embedding_client),
-    search_client=Depends(get_search_client),
-    llm_client=Depends(get_llm_client),  # kept for future orchestration hooks
+    payload: SessionStartPayload,
+    session_manager: SessionManagerDep,
+    settings: SettingsDep,
+    elastic_client: ElasticClientDep,
+    embedding_client: EmbeddingClientDep,
+    search_client: SearchClientDep,
+    llm_client: LlmClientDep,  # kept for future orchestration hooks
 ) -> SessionModel:
     _ = embedding_client, search_client, llm_client  # reserved for future use
 
@@ -91,13 +111,13 @@ async def start_session(
 @router.post("/{session_id}", response_model=SessionMessageResponse)
 async def send_message(
     session_id: str,
-    payload: SessionMessageRequest,
-    session_manager: SessionManager = Depends(get_session_manager),
-    settings: Settings = Depends(get_settings),
-    embedding_client=Depends(get_embedding_client),
-    elastic_client=Depends(get_elasticsearch_client),
-    exercise_grader=Depends(get_exercise_grader),
-    lab_primer=Depends(get_lab_primer),
+    payload: SessionMessagePayload,
+    session_manager: SessionManagerDep,
+    settings: SettingsDep,
+    embedding_client: EmbeddingClientDep,
+    elastic_client: ElasticClientDep,
+    exercise_grader: ExerciseGraderDep,
+    lab_primer: LabPrimerDep,
 ) -> SessionMessageResponse:
     try:
         session = session_manager.get_session(session_id)
@@ -124,13 +144,15 @@ async def send_message(
         code_blocks = []
         for filename, content in lab_payload.items():
             fence = "yaml" if filename.endswith(".yml") or filename.endswith(".yaml") else "makefile" if filename.lower() == "makefile" else "markdown" if filename.endswith(".md") else "text"
-            code_blocks.append(f"```{fence}
-# {filename}
-{content}
-```")
-        response_body = "
-
-".join([summary] + code_blocks)
+            code_blocks.append(
+                "\n".join([
+                    f"```{fence}",
+                    f"# {filename}",
+                    content,
+                    "```",
+                ])
+            )
+        response_body = "\n\n".join([summary] + code_blocks)
 
         await elastic_client.store_interaction(
             index=indices["session_interactions"],
@@ -253,11 +275,11 @@ async def send_message(
         coordinator = LearningCoordinator(plan=plan, index=session.current_concept_index)
         concept = coordinator.current_node()
         evaluation = await exercise_grader.evaluate(concept, payload.message)
-        status = "complete" if evaluation["passed"] else "needs_revision"
+        learning_status = "complete" if evaluation["passed"] else "needs_revision"
         session = session_manager.record_learning_outcome(
             session_id=session_id,
             concept_id=concept["concept_id"],
-            status=status,
+            status=learning_status,
             feedback=evaluation["feedback"],
         )
 
@@ -267,7 +289,7 @@ async def send_message(
             snapshot={
                 "concept_id": concept["concept_id"],
                 "concept_name": concept["concept_name"],
-                "status": status,
+                "status": learning_status,
                 "feedback": evaluation["feedback"],
                 "answer": payload.message,
                 "score": evaluation.get("score"),

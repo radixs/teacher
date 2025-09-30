@@ -8,8 +8,10 @@ from .calibration import CalibrationPlanner
 
 
 class SessionManager:
-    def __init__(self) -> None:
-        self._store: Dict[str, Session] = {}
+    _shared_store: Dict[str, Session] = {}
+
+    def __init__(self, store: Dict[str, Session] | None = None) -> None:
+        self._store: Dict[str, Session] = store if store is not None else self._shared_store
 
     def create_session(self, goal: str, profile: dict | None = None) -> Session:
         session_id = str(uuid.uuid4())

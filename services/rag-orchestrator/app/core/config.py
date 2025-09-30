@@ -1,4 +1,4 @@
-from pydantic import BaseSettings
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -24,6 +24,16 @@ class Settings(BaseSettings):
     lab_template_dir: str = "lab_templates"
     lab_output_root: str | None = None
     lab_auto_write: bool = False
+
+    @property
+    def indices(self) -> dict[str, str]:
+        return {
+            'user_profiles': self.index_user_profiles,
+            'knowledge_snapshots': self.index_knowledge_snapshots,
+            'learning_resources': self.index_learning_resources,
+            'dependency_graph': self.index_dependency_graph,
+            'session_interactions': self.index_session_interactions,
+        }
 
     class Config:
         env_prefix = "RAG_"

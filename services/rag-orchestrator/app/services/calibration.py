@@ -9,7 +9,8 @@ CALIBRATION_QUESTIONS = [
     "How comfortable are you describing how documents are indexed and retrieved in Elasticsearch?",
     "Do you have hands-on experience with embeddings or vector search concepts?",
     "Which programming languages and frameworks do you plan to use alongside ESRE work?",
-    "What outcome are you aiming for in the next 4 weeks of learning?"
+    "What outcome are you aiming for in the next 4 weeks of learning?",
+    "How much time per week can you dedicate to guided practice and labs?",
 ]
 
 

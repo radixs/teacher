@@ -69,11 +69,10 @@ class ExerciseGrader:
         return result
 
     def _build_prompt(self, concept: Dict[str, Any], answer: str) -> str:
-        rubric_lines = []
-        for item in self._profile.rubric:
-            rubric_lines.append(
-                f"- {item.get('id')}: weight {item.get('weight', 0)} -> {item.get('instructions')}"
-            )
+        rubric_lines = [
+            f"- {item.get('id')}: weight {item.get('weight', 0)} -> {item.get('instructions')}"
+            for item in self._profile.rubric
+        ]
 
         resources = concept.get("resources", [])
         resource_lines = [
@@ -81,27 +80,37 @@ class ExerciseGrader:
             for res in resources
         ] or ["  * None provided"]
 
-        prompt = f"""
-You are an expert mentor evaluating a learner's answer.
-Evaluate the answer strictly according to the rubric and respond with concise JSON using the schema:
-{{"passed": bool, "score": float, "feedback": string, "highlights": [string]}}
+        lines = [
+            "You are an expert mentor evaluating a learner's answer.",
+            "Evaluate the answer strictly according to the rubric and respond with concise JSON using the schema:",
+            "{\"passed\": bool, \"score\": float, \"feedback\": string, \"highlights\": [string]}",
+            "",
+            f"Context:",
+            f"- Goal: {concept.get('goal', 'N/A')}",
+            f"- Concept: {concept.get('concept_name')}",
+            f"- Summary: {concept.get('summary')}",
+            f"- Exercise: {concept.get('exercise')}",
+            "- Resources:",
+            *resource_lines,
+            "",
+            "Rubric:",
+            *rubric_lines,
+            "",
+            "Learner answer:",
+            answer.strip(),
+            "",
+            "Return only the JSON object. Do not include explanations outside the JSON.",
+        ]
 
-Context:
-- Goal: {concept.get('goal', 'N/A')}
-- Concept: {concept.get('concept_name')}
-- Summary: {concept.get('summary')}
-- Exercise: {concept.get('exercise')}
-- Resources:\n{chr(10).join(resource_lines)}
+        # Flatten nested lists that result from the unpacking above
+        flattened: list[str] = []
+        for entry in lines:
+            if isinstance(entry, list):
+                flattened.extend(entry)
+            else:
+                flattened.append(entry)
 
-Rubric:
-{chr(10).join(rubric_lines)}
-
-Learner answer:
-"""{answer}"""
-
-Return only the JSON object. Do not include explanations outside the JSON.
-"""
-        return prompt.strip()
+        return "\n".join(flattened).strip()
 
     def _parse_result(self, text: str) -> Dict[str, Any] | None:
         try:

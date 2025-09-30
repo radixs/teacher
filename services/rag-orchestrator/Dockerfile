@@ -16,6 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
 COPY config ./config
+COPY lab_templates ./lab_templates
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 

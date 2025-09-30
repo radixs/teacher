@@ -43,4 +43,15 @@
 - Lab primers: trigger with `/lab <topic>`; auto-write to `RAG_LAB_OUTPUT_ROOT` when `RAG_LAB_AUTO_WRITE=1`.
 - `make test` runs: backend `php artisan test`, rag-orchestrator + search-agent `pytest`, frontend build smoke; extend as stack evolves.
 - GPU usage: llama.cpp built with HIP; containers map `/dev/kfd` and `/dev/dri` and expect ROCm drivers. Set `HIP_VISIBLE_DEVICES=-1` to force CPU fallback.
-- When using GPU mode, host runs Ubuntu 24.04 with a Radeon RX 6600 (gfx1032); follow README ROCm section for install/verification commands.
+- GPU acceleration: prefer containerised ROCm (see README). Avoid host-level ROCm installs unless you are ready to restore Mesa/AMDGPU.
+
+## Current Skeleton Status
+- Project remains at scaffolding stage: backend/frontend/RAG services exist but most behaviour is stubbed.
+- Docker compose brings up eight services; containers start but end-to-end flows (RAG orchestration, embedding, grading) still need validation.
+- `make test` currently passes Laravel suite but rag-orchestrator pytest fails (422 due to request schema).
+
+## Next Conversation Reminders
+- On new sessions, rebuild containers and rerun `make test` to confirm current failures.
+- Fix focus: rag-orchestrator POST `/v1/sessions` should accept plain JSON body; adjust FastAPI endpoint and tests.
+- Ensure grading config + lab primer dependencies still resolvable.
+- GPU path is containerised ROCm only (`/dev/kfd`, `/dev/dri`, user in video/render). Avoid host ROCm installs.

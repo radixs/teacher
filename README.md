@@ -88,56 +88,28 @@ Once Elasticsearch is running, execute `make bootstrap-es` to apply index templa
 
 
 ## GPU Acceleration (AMD ROCm)
-The host already loads the `amdgpu` kernel driver, and `lspci` identifies a Radeon RX 6600 (Navi 23). No ROCm userland packages are installed yet, so use the following Ubuntu 24.04 guidance when you want GPU acceleration.
+> ⚠️ **Heads up:** Installing ROCm directly on the host can replace the stock Mesa/AMDGPU stack. On this machine it swapped the RX 6600 driver for an Aldebaran server stack until ROCm was fully removed. If you rely on the desktop driver, prefer containerised ROCm instead of host-level packages.
 
-### Verify the GPU stack
+### Safer approach: ROCm inside Docker/Podman
+1. Install AMD’s out-of-tree repackaged runtime inside the container image (as `llm-engine` already does via the `rocm/dev-ubuntu` base image).
+2. Map the GPU device nodes when launching services:
+   ```yaml
+   devices:
+     - /dev/kfd:/dev/kfd
+     - /dev/dri:/dev/dri
+   group_add:
+     - video
+   ```
+3. Keep the host on the standard Mesa/AMDGPU driver; only the container pulls in ROCm libraries.
+4. When upgrading ROCm, rebuild the `llm-engine` image so it links against the new runtime.
+
+### Optional host-side checks (no ROCm install required)
 ```bash
-lspci -nn | grep -E "VGA|Display"  # should list the Radeon RX 6600 (gfx1032)
-lsmod | grep amdgpu                       # confirm the kernel module is loaded
-sudo dmesg | grep -i amdgpu | tail -20    # inspect recent driver messages
+lspci -nn | grep -E "VGA|Display"   # verify the GPU is the Radeon RX 6600 (gfx1032)
+lsmod | grep amdgpu                  # confirm the kernel module is loaded
 ```
 
-### Check for existing ROCm packages
-```bash
-dpkg -l | grep -i rocm
-which rocminfo && rocminfo | head
-which hipcc && hipcc --version
-```
-If these commands report nothing, ROCm userland components are not yet present.
-
-### Install/upgrade ROCm 5.7.0 (Ubuntu 24.04 example)
-ROCm 5.7 officially supports the RX 6600. Confirm the available release string first, then install:
-```bash
-# Discover ROCm versions published in the configured repository
-apt-cache policy rocm-libs | head
-
-# Refresh AMD + Ubuntu repositories
-sudo apt update
-
-# Install ROCm runtime and HIP without re-installing kernel DKMS modules
-sudo amdgpu-install --usecase=rocm,hip -y --no-dkms --rocmrelease=5.7.0 --accept-eula
-
-# Optional diagnostics tools
-sudo apt install rocminfo rocm-hip-runtime-dev rocm-smi librocm-smi64-1
-
-# Allow your user (and Docker) to access GPU device nodes
-sudo usermod -a -G video,render $USER
-newgrp video   # reload video group without full relog
-newgrp render  # load render group (or log out/in)
-```
-If `rocminfo` still reports `/dev/kfd` permission errors, run `groups` to confirm membership and log out/in if necessary.
-
-Adjust `--rocmrelease` to match the `apt-cache` candidate and consult AMD's compatibility matrix if you change GPUs.
-
-### Post-install validation
-```bash
-rocminfo | less   # expect gfx1032 for an RX 6600
-rocm-smi          # temperature, clocks, fan speed
-hipcc --version   # confirms HIP toolchain availability
-```
-If these binaries are not in your PATH, check `/opt/rocm-*/bin` for the versioned symlinks installed by `amdgpu-install`.
-The commands should succeed and report ROCM 5.7.0 (or newer) with the RX 6600 detected; `hipcc --version` prints warnings that can be ignored.
-
+If you still want to attempt a host installation, be aware it may alter the system driver. Back up, and only proceed if you are prepared to roll back. The previous step-by-step host install commands have been intentionally removed to avoid accidental driver replacement.
 ### Docker integration checklist (step-by-step)
 1. **Expose GPU device files** – in `docker-compose.yml`, ensure the `llm-engine` service contains:
    ```yaml
