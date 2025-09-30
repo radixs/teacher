@@ -15,18 +15,17 @@ class RagClient
 
     public function startSession(array $payload): array
     {
-        // TODO: wire to orchestrator once implemented.
-        return $this->http->post('/sessions', $payload)->json();
+        return $this->http->post('/v1/sessions', $payload)->json();
     }
 
     public function sendMessage(string $sessionId, array $payload): array
     {
-        return $this->http->post("/sessions/{$sessionId}/messages", $payload)->json();
+        return $this->http->post("/v1/sessions/{$sessionId}", $payload)->json();
     }
 
     public function fetchSession(string $sessionId): array
     {
-        return $this->http->get("/sessions/{$sessionId}")->json();
+        return $this->http->get("/v1/sessions/{$sessionId}")->json();
     }
 
     public function getElasticsearchConfig(): array
