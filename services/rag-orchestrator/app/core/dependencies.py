@@ -9,11 +9,20 @@ from ..clients.search import SearchClient
 from ..clients.elasticsearch import ElasticsearchClient
 from ..services.grading import ExerciseGrader, load_grading_config
 from ..services.lab_primer import LabPrimer
+from ..services.session_store import SessionStore
 
 
 @lru_cache()
 def get_session_manager() -> SessionManager:
     return SessionManager()
+
+
+@lru_cache()
+def get_session_store() -> SessionStore:
+    settings = get_settings()
+    client = get_elasticsearch_client()
+    indices = settings.indices
+    return SessionStore(client, indices["sessions"])
 
 
 @lru_cache()

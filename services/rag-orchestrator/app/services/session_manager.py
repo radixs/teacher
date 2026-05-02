@@ -25,6 +25,10 @@ class SessionManager:
         self._store[session_id] = session
         return session
 
+    def register_session(self, session: Session) -> Session:
+        self._store[session.id] = session
+        return session
+
     def next_calibration_question(self, session_id: str) -> str | None:
         session = self._require_session(session_id)
         if not session.calibration_queue:

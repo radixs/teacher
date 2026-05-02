@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     index_learning_resources: str = "learning_resources"
     index_dependency_graph: str = "dependency_graph"
     index_session_interactions: str = "session_interactions"
+    index_sessions: str = "sessions"
 
     grading_profile: str = "default"
     grading_config_path: str = "config/grading_profiles.yaml"
@@ -33,6 +34,7 @@ class Settings(BaseSettings):
             'learning_resources': self.index_learning_resources,
             'dependency_graph': self.index_dependency_graph,
             'session_interactions': self.index_session_interactions,
+            'sessions': self.index_sessions,
         }
 
     class Config:

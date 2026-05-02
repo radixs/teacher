@@ -13,6 +13,7 @@ from ...core.dependencies import (
     get_session_manager,
     get_exercise_grader,
     get_lab_primer,
+    get_session_store,
 )
 from ...clients.elasticsearch import ElasticsearchClient
 from ...clients.embedding import EmbeddingClient
@@ -20,6 +21,7 @@ from ...clients.llm import LlmClient
 from ...clients.search import SearchClient
 from ...services.grading import ExerciseGrader
 from ...services.lab_primer import LabPrimer
+from ...services.session_store import SessionStore
 from ...models.api import (
     MessageModel,
     SessionMessageRequest,
@@ -45,6 +47,7 @@ SearchClientDep = Annotated[SearchClient, Depends(get_search_client)]
 LlmClientDep = Annotated[LlmClient, Depends(get_llm_client)]
 ExerciseGraderDep = Annotated[ExerciseGrader, Depends(get_exercise_grader)]
 LabPrimerDep = Annotated[LabPrimer, Depends(get_lab_primer)]
+SessionStoreDep = Annotated[SessionStore, Depends(get_session_store)]
 
 
 def _serialize_message(message: Message) -> MessageModel:
@@ -78,6 +81,7 @@ async def start_session(
     embedding_client: EmbeddingClientDep,
     search_client: SearchClientDep,
     llm_client: LlmClientDep,  # kept for future orchestration hooks
+    session_store: SessionStoreDep,
 ) -> SessionModel:
     _ = embedding_client, search_client, llm_client  # reserved for future use
 
@@ -105,7 +109,9 @@ async def start_session(
         phase=session.phase,
     )
 
-    return _serialize_session(session_manager.get_session(session.id))
+    persisted_session = session_manager.get_session(session.id)
+    await session_store.save(persisted_session)
+    return _serialize_session(persisted_session)
 
 
 @router.post("/{session_id}", response_model=SessionMessageResponse)
@@ -118,11 +124,16 @@ async def send_message(
     elastic_client: ElasticClientDep,
     exercise_grader: ExerciseGraderDep,
     lab_primer: LabPrimerDep,
+    session_store: SessionStoreDep,
 ) -> SessionMessageResponse:
     try:
         session = session_manager.get_session(session_id)
     except KeyError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        stored = await session_store.get(session_id)
+        if not stored:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        session_manager.register_session(stored)
+        session = session_manager.get_session(session_id)
 
     user_message = Message(role="user", content=payload.message, metadata=payload.metadata)
     session = session_manager.add_message(session_id, user_message)
@@ -181,8 +192,8 @@ async def send_message(
             metadata=assistant_message.metadata,
             phase=session.phase,
         )
-
         updated_session = session_manager.get_session(session_id)
+        await session_store.save(updated_session)
         return SessionMessageResponse(
             session=_serialize_session(updated_session),
             last_message=_serialize_message(assistant_message),
@@ -266,7 +277,6 @@ async def send_message(
             metadata=assistant_message.metadata,
             phase=session.phase,
         )
-
     elif session.phase == "learning":
         plan = session.tuning_plan
         if not plan:
@@ -363,6 +373,7 @@ async def send_message(
         )
 
     updated_session = session_manager.get_session(session_id)
+    await session_store.save(updated_session)
 
     return SessionMessageResponse(
         session=_serialize_session(updated_session),
@@ -373,11 +384,16 @@ async def send_message(
 @router.get("/{session_id}", response_model=SessionModel)
 async def get_session(
     session_id: str,
-    session_manager: SessionManager = Depends(get_session_manager),
+    session_manager: SessionManagerDep,
+    session_store: SessionStoreDep,
 ) -> SessionModel:
     try:
         session = session_manager.get_session(session_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except KeyError:
+        stored = await session_store.get(session_id)
+        if not stored:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Session {session_id} not found")
+        session_manager.register_session(stored)
+        session = stored
 
     return _serialize_session(session)

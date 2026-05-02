@@ -3,12 +3,36 @@
     <aside class="sidebar">
       <h1>Teacher</h1>
       <p class="sub">Personalized learning companion.</p>
+
       <section class="session-info" v-if="hasSession">
         <h2>Active Goal</h2>
         <p>{{ store.state.goal }}</p>
         <p class="phase">Phase: {{ phaseLabel }}</p>
       </section>
-      <section class="new-session" v-else>
+
+      <section class="session-list" v-if="sessionHistory.length">
+        <h2>Sessions</h2>
+        <ul>
+          <li v-for="session in sessionHistory" :key="session.id">
+            <button
+              type="button"
+              class="session-entry"
+              :class="{ active: session.id === store.state.sessionId }"
+              :disabled="store.state.loading && session.id === store.state.sessionId"
+              @click="resume(session.id)"
+            >
+              <span class="title">{{ session.goal || 'Untitled Goal' }}</span>
+              <span class="meta">
+                {{ formatPhase(session.phase) }}
+                <template v-if="session.updated_at"> · {{ formatUpdated(session.updated_at) }}</template>
+              </span>
+            </button>
+          </li>
+        </ul>
+      </section>
+
+      <section class="new-session">
+        <h2>Start New Session</h2>
         <label>
           Learning goal
           <textarea
@@ -28,6 +52,7 @@
         <button :disabled="store.state.loading || !goal.trim()" @click="start">
           Start Session
         </button>
+        <p v-if="store.state.error && !hasSession" class="error">{{ store.state.error }}</p>
       </section>
     </aside>
 
@@ -61,6 +86,7 @@ import ChatMessage from '@/components/ChatMessage.vue';
 
 const store = useStore();
 const hasSession = computed(() => store.getters.hasSession);
+const sessionHistory = computed(() => store.getters.sessionHistory);
 const goal = ref('');
 const profile = ref('');
 const historyEl = ref(null);
@@ -71,14 +97,59 @@ const phaseLabel = computed(() => {
 });
 
 async function start() {
-  await store.dispatch('startSession', {
-    goal: goal.value.trim(),
-    profile: profile.value ? { summary: profile.value.trim() } : undefined
-  });
+  if (!goal.value.trim()) {
+    return;
+  }
+
+  try {
+    await store.dispatch('startSession', {
+      goal: goal.value.trim(),
+      profile: profile.value ? { summary: profile.value.trim() } : undefined
+    });
+    goal.value = '';
+    profile.value = '';
+  } catch (error) {
+    // keep form values so the learner can adjust and retry
+  }
 }
 
 async function send(message) {
   await store.dispatch('sendMessage', { message });
+}
+
+async function resume(sessionId) {
+  if (!sessionId || sessionId === store.state.sessionId) {
+    return;
+  }
+
+  try {
+    await store.dispatch('loadSession', sessionId);
+  } catch (error) {
+    // error state handled centrally by the store
+  }
+}
+
+function formatPhase(phase) {
+  const value = phase ?? 'idle';
+  return value.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function formatUpdated(timestamp) {
+  if (!timestamp) {
+    return '';
+  }
+
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  }).format(date);
 }
 
 function scrollToBottom() {
@@ -125,6 +196,49 @@ onMounted(() => {
   opacity: 0.8;
 }
 
+.session-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.session-entry {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 0.75rem;
+  border: 1px solid transparent;
+  background: rgba(15, 23, 42, 0.6);
+  color: inherit;
+  text-align: left;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.session-entry .title {
+  font-weight: 600;
+}
+
+.session-entry .meta {
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+
+.session-entry:not(.active):hover {
+  border-color: rgba(148, 163, 184, 0.6);
+  background: rgba(15, 23, 42, 0.75);
+}
+
+.session-entry.active {
+  border-color: rgba(129, 140, 248, 0.9);
+  background: rgba(79, 70, 229, 0.25);
+}
+
 textarea {
   margin-top: 0.5rem;
   width: 100%;
@@ -148,6 +262,12 @@ button {
 
 button:disabled {
   opacity: 0.6;
+}
+
+.error {
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+  color: #fca5a5;
 }
 
 .conversation {

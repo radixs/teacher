@@ -2,6 +2,44 @@
 
 This repository hosts a containerized learning companion that guides users through custom training paths using Retrieval-Augmented Generation (RAG) backed by Elasticsearch. The stack comprises a Vue 3 SPA, Laravel 12 API, and Python microservices coordinating local LLM + embedding models that run comfortably on an AMD Ryzen 5 7600 / Radeon RX 6600 workstation.
 
+## Explanation for Dummies.
+
+xxxx
+plan
+
+sections description - what to expect today
+what is rag
+- poll 1-10 what do you know about it
+how it works based on child example - knowledgeable low iq librarian
+- questions - some portal users can log into and give their answers
+- what will happen when librarian does not use RAG
+- what will happen when librarian uses RAG
+how it works based on this app - show around
+- develop a story with session start and end, some user inputs
+behind the scenes - explain components
+- add a logging that displays what is done in a file
+- how storing to rag works
+- how rag retrieval works
+- dimensions and vectors (weights)
+- the whole process flow, models, python scripts, laravel app
+- make a flow chart, after passing each section add to the flow simple summary to previous steps
+- quiz
+possible uses in auto1
+- having RAG up to date - need to listen to everything, but at least does not require documentation updates and model retrain. Does not hallucinate but need proper tagging (cross service flows)
+- coding in Claude Code
+- ticket making (JIRA append)
+- documentation making (autocomplete)
+- log search
+aws service requirements, mcp
+- models - host or use external
+- rollout plan
+cag
+- what is it and how it is different
+- is it more useful
+
+xxxx
+
+
 ## Status
 Calibration flow implemented: sessions begin with guided questions whose answers are stored in Elasticsearch for later tuning.
 Tuning roadmap generator creates a dependency list after calibration and stores it in Elasticsearch.
@@ -36,6 +74,10 @@ Populate credentials and tune resource-specific variables as needed.
 - `make down` – stop and remove containers.
 - `make logs` – follow logs from all services.
 - `make test` – execute the verification suite (to be implemented).
+
+## Services
+- Kibana: http://localhost:5601 (dashboard + index inspection)
+
 
 ## Service Overview
 

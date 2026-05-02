@@ -6,8 +6,10 @@ from app.core.dependencies import (
     get_embedding_client,
     get_session_manager,
     get_exercise_grader,
+    get_session_store,
 )
 from app.services.session_manager import SessionManager
+from app.models.session import Session
 
 
 class FakeEmbeddingClient:
@@ -39,22 +41,53 @@ class FakeElasticsearchClient:
         return None
 
 
+class FakeSessionStore:
+    def __init__(self) -> None:
+        self._sessions: dict[str, Session] = {}
+
+    async def save(self, session: Session) -> None:
+        self._sessions[session.id] = session
+
+    async def get(self, session_id: str) -> Session | None:
+        return self._sessions.get(session_id)
+
+    async def list(self):  # pragma: no cover - not used in unit tests yet
+        return list(self._sessions.values())
+
+
+fake_session_manager = SessionManager()
+
+
 def override_session_manager():
-    return SessionManager()
+    return fake_session_manager
+
+
+fake_session_store = FakeSessionStore()
+
+
+def override_session_store():
+    return fake_session_store
 
 
 def setup_module(_module):
+    global client
     app.dependency_overrides[get_embedding_client] = lambda: FakeEmbeddingClient()
     app.dependency_overrides[get_elasticsearch_client] = lambda: FakeElasticsearchClient()
     app.dependency_overrides[get_session_manager] = override_session_manager
     app.dependency_overrides[get_exercise_grader] = lambda: FakeGrader()
+    app.dependency_overrides[get_session_store] = override_session_store
+    client = TestClient(app)
 
 
 def teardown_module(_module):
+    global client
     app.dependency_overrides.clear()
+    fake_session_manager._store.clear()
+    fake_session_store._sessions.clear()
+    client = None
 
 
-client = TestClient(app)
+client = None
 
 
 def test_start_session_creates_session():

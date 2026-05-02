@@ -1,0 +1,46 @@
+{
+  "index_patterns": ["sessions"],
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0
+    },
+    "mappings": {
+      "dynamic": "strict",
+      "properties": {
+        "id": { "type": "keyword" },
+        "goal": {
+          "type": "text",
+          "fields": {
+            "keyword": { "type": "keyword", "ignore_above": 256 }
+          }
+        },
+        "profile": { "type": "object", "enabled": true },
+        "phase": { "type": "keyword" },
+        "messages": {
+          "type": "nested",
+          "properties": {
+            "role": { "type": "keyword" },
+            "content": { "type": "text" },
+            "created_at": { "type": "date" },
+            "metadata": { "type": "object", "enabled": true }
+          }
+        },
+        "calibration_queue": { "type": "keyword" },
+        "calibration_history": {
+          "type": "nested",
+          "properties": {
+            "question": { "type": "text" },
+            "answer": { "type": "text" },
+            "created_at": { "type": "date" }
+          }
+        },
+        "tuning_plan": { "type": "nested", "dynamic": true },
+        "learning_progress": { "type": "nested", "dynamic": true },
+        "current_concept_index": { "type": "integer" },
+        "created_at": { "type": "date" },
+        "updated_at": { "type": "date" }
+      }
+    }
+  }
+}
