@@ -2,6 +2,8 @@
 
 return [
     'orchestrator_url' => env('RAG_ORCHESTRATOR_URL', 'http://rag-orchestrator:9000'),
+    'request_timeout' => (int) env('RAG_HTTP_TIMEOUT', 180),
+    'connect_timeout' => (int) env('RAG_HTTP_CONNECT_TIMEOUT', 5),
     'llm_engine_url' => env('LLM_ENGINE_URL', 'http://llm-engine:8000'),
     'embedding_service_url' => env('EMBEDDING_SERVICE_URL', 'http://embedding-worker:9100'),
     'search_agent_url' => env('SEARCH_AGENT_URL', 'http://search-agent:9205'),

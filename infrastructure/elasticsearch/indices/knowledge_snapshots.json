@@ -3,17 +3,23 @@
   "template": {
     "settings": {
       "number_of_shards": 1,
-      "number_of_replicas": 0,
-      "index": {
-        "knn": true
-      }
+      "number_of_replicas": 0
     },
     "mappings": {
-      "dynamic": "false",
+      "dynamic": false,
       "properties": {
         "session_id": {"type": "keyword"},
+        "goal": {"type": "text"},
+        "question": {"type": "text"},
+        "answer": {"type": "text"},
         "topic": {"type": "text"},
         "content": {"type": "text"},
+        "concept_id": {"type": "keyword"},
+        "concept_name": {"type": "text"},
+        "status": {"type": "keyword"},
+        "feedback": {"type": "text"},
+        "score": {"type": "float"},
+        "highlights": {"type": "keyword"},
         "embedding": {
           "type": "dense_vector",
           "dims": 768,

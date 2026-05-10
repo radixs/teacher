@@ -4,6 +4,9 @@ services:
       context: ./services/backend
     env_file:
       - .env
+    environment:
+      - FLOW_LOG_PATH=${FLOW_LOG_PATH:-/shared-logs/teacher-flow.log}
+      - FLOW_EVENT_TOKEN=${FLOW_EVENT_TOKEN:-teacher-flow-events-local}
     depends_on:
       - elasticsearch
       - rag-orchestrator
@@ -12,6 +15,7 @@ services:
     volumes:
       - ./services/backend/app:/var/www/html
       - ./services/backend/docker/php.ini:/usr/local/etc/php/conf.d/custom.ini:ro
+      - ./infrastructure/demo-logs:/shared-logs
     networks:
       - appnet
 
@@ -42,6 +46,9 @@ services:
       - RAG_HOST=0.0.0.0
       - RAG_PORT=${RAG_API_PORT:-9000}
       - RAG_RELOAD=${RAG_RELOAD:-}
+      - FLOW_LOG_PATH=${FLOW_LOG_PATH:-/shared-logs/teacher-flow.log}
+      - FLOW_EVENT_PUSH_URL=http://backend:${BACKEND_INTERNAL_PORT:-8080}/api/v1/flow-events
+      - FLOW_EVENT_TOKEN=${FLOW_EVENT_TOKEN:-teacher-flow-events-local}
     depends_on:
       - llm-engine
       - embedding-worker
@@ -52,6 +59,7 @@ services:
     volumes:
       - ./services/rag-orchestrator/app:/usr/src/app/app
       - ./services/rag-orchestrator/config:/usr/src/app/config
+      - ./infrastructure/demo-logs:/shared-logs
     networks:
       - appnet
 
@@ -64,6 +72,9 @@ services:
       - LLM_CONFIG_PATH=/config/config.yaml
       - HSA_OVERRIDE_GFX_VERSION=${HSA_OVERRIDE_GFX_VERSION:-10.3.0}
       - HIP_VISIBLE_DEVICES=${HIP_VISIBLE_DEVICES:-0}
+      - FLOW_LOG_PATH=${FLOW_LOG_PATH:-/shared-logs/teacher-flow.log}
+      - FLOW_EVENT_PUSH_URL=http://backend:${BACKEND_INTERNAL_PORT:-8080}/api/v1/flow-events
+      - FLOW_EVENT_TOKEN=${FLOW_EVENT_TOKEN:-teacher-flow-events-local}
     devices:
       - /dev/kfd:/dev/kfd
       - /dev/dri:/dev/dri
@@ -76,6 +87,7 @@ services:
     volumes:
       - ./services/llm-engine/config.yaml:/config/config.yaml:ro
       - llm_models:/models
+      - ./infrastructure/demo-logs:/shared-logs
     networks:
       - appnet
 
@@ -87,10 +99,14 @@ services:
     environment:
       - EMBEDDING_MODEL_NAME=${EMBEDDING_MODEL_NAME_OR_PATH:-BAAI/bge-base-en-v1.5}
       - EMBEDDING_PORT=${EMBEDDING_PORT:-9100}
+      - FLOW_LOG_PATH=${FLOW_LOG_PATH:-/shared-logs/teacher-flow.log}
+      - FLOW_EVENT_PUSH_URL=http://backend:${BACKEND_INTERNAL_PORT:-8080}/api/v1/flow-events
+      - FLOW_EVENT_TOKEN=${FLOW_EVENT_TOKEN:-teacher-flow-events-local}
     ports:
       - "${EMBEDDING_PORT:-9100}:9100"
     volumes:
       - embedding_models:/models
+      - ./infrastructure/demo-logs:/shared-logs
     networks:
       - appnet
 
@@ -103,8 +119,13 @@ services:
       - SEARCH_AGENT_PORT=${SEARCH_AGENT_PORT:-9205}
       - SEARCH_AGENT_REQUEST_INTERVAL_SECONDS=${DUCKDUCKGO_REQUEST_INTERVAL_SECONDS:-2.0}
       - SEARCH_AGENT_USER_AGENT=${DUCKDUCKGO_USER_AGENT:-teacher-app-bot/0.1}
+      - FLOW_LOG_PATH=${FLOW_LOG_PATH:-/shared-logs/teacher-flow.log}
+      - FLOW_EVENT_PUSH_URL=http://backend:${BACKEND_INTERNAL_PORT:-8080}/api/v1/flow-events
+      - FLOW_EVENT_TOKEN=${FLOW_EVENT_TOKEN:-teacher-flow-events-local}
     ports:
       - "${SEARCH_AGENT_PORT:-9205}:9205"
+    volumes:
+      - ./infrastructure/demo-logs:/shared-logs
     networks:
       - appnet
 

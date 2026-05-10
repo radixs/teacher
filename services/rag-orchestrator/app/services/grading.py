@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -8,6 +9,7 @@ from typing import Any, Dict, List
 import yaml
 
 from ..clients.llm import LlmClient
+from ..core.flow_logger import log_flow
 
 
 @dataclass
@@ -56,15 +58,52 @@ class ExerciseGrader:
         answer: str,
     ) -> Dict[str, Any]:
         prompt = self._build_prompt(concept, answer)
+        log_flow(
+            "rag-orchestrator",
+            "grading.started",
+            "ExerciseGrader started evaluating the learner answer for the current concept.",
+            concept_id=concept.get("concept_id"),
+            concept_name=concept.get("concept_name"),
+            answer=answer,
+        )
         try:
-            response = await self._llm.generate(prompt)
+            response = await asyncio.wait_for(
+                self._llm.generate(
+                    prompt,
+                    system_prompt=(
+                        "You are a strict technical mentor. "
+                        "Return only valid JSON matching the requested schema."
+                    ),
+                    response_format={"type": "json_object"},
+                    temperature=0.1,
+                    max_tokens=512,
+                    request_timeout=25.0,
+                ),
+                timeout=25.0,
+            )
             text = response.get("content") or response.get("text") or ""
             result = self._parse_result(text)
+            if result:
+                log_flow(
+                    "rag-orchestrator",
+                    "grading.llm_result",
+                    "ExerciseGrader parsed a structured grading result from the LLM output.",
+                    concept_id=concept.get("concept_id"),
+                    passed=result.get("passed"),
+                    score=result.get("score"),
+                )
         except Exception:
             result = None
 
         if not result:
             result = self._heuristic_fallback(answer)
+            log_flow(
+                "rag-orchestrator",
+                "grading.heuristic_fallback",
+                "ExerciseGrader fell back to the local heuristic scoring path.",
+                passed=result.get("passed"),
+                score=result.get("score"),
+            )
 
         return result
 

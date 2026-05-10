@@ -1,18 +1,48 @@
 # syntax=docker/dockerfile:1.6
 
 ARG UBUNTU_VERSION=22.04
-ARG ROCM_VERSION=5.7.1
+ARG ROCM_VERSION=6.1.2
 ARG LLAMA_CPP_REF=b3309
 
 FROM rocm/dev-ubuntu-${UBUNTU_VERSION}:${ROCM_VERSION} AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive     ROCM_PATH=/opt/rocm
 
-RUN apt-get update     && apt-get install -y --no-install-recommends         build-essential         cmake         git         wget         python3         python3-pip         libcurl4-openssl-dev         pkg-config     && rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        cmake \
+        git \
+        wget \
+        python3 \
+        python3-pip \
+        libcurl4-openssl-dev \
+        pkg-config \
+        rocblas-dev \
+        hipblas-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
 
-RUN git clone https://github.com/ggerganov/llama.cpp.git     && cd llama.cpp     && git checkout ${LLAMA_CPP_REF}     && cmake -B build -S .         -DLLAMA_BUILD_SERVER=ON         -DLLAMA_BUILD_EXAMPLES=OFF         -DLLAMA_CURL=ON         -DLLAMA_HIPBLAS=ON     && cmake --build build -j "$(nproc)"     && cmake --install build --prefix /opt/llama     && strip build/bin/llama-server
+RUN git clone https://github.com/ggerganov/llama.cpp.git \
+    && cd llama.cpp \
+    && git checkout ${LLAMA_CPP_REF} \
+    && ROCM_ROOT="$(hipconfig -R)" \
+    && HIPCXX="$(hipconfig -l)/clang" HIP_PATH="${ROCM_ROOT}" \
+       cmake -B build -S . \
+         -DCMAKE_BUILD_TYPE=Release \
+         -DCMAKE_PREFIX_PATH="${ROCM_ROOT};${ROCM_ROOT}/lib/cmake" \
+         -DLLAMA_BUILD_SERVER=ON \
+         -DLLAMA_BUILD_EXAMPLES=OFF \
+         -DLLAMA_CURL=ON \
+         -DGGML_HIP=ON \
+         -DGGML_HIPBLAS=ON \
+         -Dhipblas_DIR="${ROCM_ROOT}/lib/cmake/hipblas" \
+         -Drocblas_DIR="${ROCM_ROOT}/lib/cmake/rocblas" \
+         -DAMDGPU_TARGETS=gfx1030 \
+    && cmake --build build -j "$(nproc)" \
+    && cmake --install build --prefix /opt/llama \
+    && strip build/bin/llama-server
 
 FROM rocm/dev-ubuntu-${UBUNTU_VERSION}:${ROCM_VERSION} AS runtime
 

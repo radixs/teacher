@@ -52,6 +52,12 @@ return [
             'lock_path' => storage_path('framework/cache/data'),
         ],
 
+        'flow_events' => [
+            'driver' => 'file',
+            'path' => storage_path('framework/cache/flow-events'),
+            'lock_path' => storage_path('framework/cache/flow-events'),
+        ],
+
         'memcached' => [
             'driver' => 'memcached',
             'persistent_id' => env('MEMCACHED_PERSISTENT_ID'),

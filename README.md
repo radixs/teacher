@@ -2,58 +2,29 @@
 
 This repository hosts a containerized learning companion that guides users through custom training paths using Retrieval-Augmented Generation (RAG) backed by Elasticsearch. The stack comprises a Vue 3 SPA, Laravel 12 API, and Python microservices coordinating local LLM + embedding models that run comfortably on an AMD Ryzen 5 7600 / Radeon RX 6600 workstation.
 
-## Explanation for Dummies.
-
-xxxx
-plan
-
-sections description - what to expect today
-what is rag
-- poll 1-10 what do you know about it
-how it works based on child example - knowledgeable low iq librarian
-- questions - some portal users can log into and give their answers
-- what will happen when librarian does not use RAG
-- what will happen when librarian uses RAG
-how it works based on this app - show around
-- develop a story with session start and end, some user inputs
-behind the scenes - explain components
-- add a logging that displays what is done in a file
-- how storing to rag works
-- how rag retrieval works
-- dimensions and vectors (weights)
-- the whole process flow, models, python scripts, laravel app
-- make a flow chart, after passing each section add to the flow simple summary to previous steps
-- quiz
-possible uses in auto1
-- having RAG up to date - need to listen to everything, but at least does not require documentation updates and model retrain. Does not hallucinate but need proper tagging (cross service flows)
-- coding in Claude Code
-- ticket making (JIRA append)
-- documentation making (autocomplete)
-- log search
-aws service requirements, mcp
-- models - host or use external
-- rollout plan
-cag
-- what is it and how it is different
-- is it more useful
-
-xxxx
-
+## Flow Documentation
+- High-level runtime map: `flows.md`
+- Gradual beginner-to-technical walkthrough: `detailed_flow_for_dummies.md`
+- Manual verification runbook: `manual_tests.md`
+- Browser-visible live event stream: `Live Flow Console` at the bottom of the chat view
+- Demo-friendly end-to-end trace file: `infrastructure/demo-logs/teacher-flow.log`
 
 ## Status
-Calibration flow implemented: sessions begin with guided questions whose answers are stored in Elasticsearch for later tuning.
-Tuning roadmap generator creates a dependency list after calibration and stores it in Elasticsearch.
-Learning phase scaffolding: each concept exposes resources + exercises and advances when answers meet placeholder evaluation (full grading arrives in Step 13).
-The project is in the bootstrap phase. Core services, orchestration scripts, and documentation are being scaffolded according to the rollout plan in `rollout.md`.
+Calibration flow is active: session startup generates personalized calibration questions through the local LLM, with deterministic fallback questions if the model output is unusable.
+Tuning roadmap generation is active: calibration answers are combined with fast DuckDuckGo result cards, external resources are embedded and stored in Elasticsearch, and the local LLM produces the roadmap with fallback logic if needed.
+Learning phase is active: each concept exposes resources + exercises, grading requests structured JSON from the local LLM, and heuristic grading remains only as a safety net.
+`llm-engine` is configured for HIP offload on the target RX 6600 by default (`LLM_ACCELERATION_MODE=gpu`, `LLM_GPU_LAYERS=32`). CPU fallback is a one-line `.env` change: set `LLM_ACCELERATION_MODE=cpu` and restart the stack.
+The stack is still a scaffolded project, but the end-to-end learning path now exercises the intended containers instead of placeholder-only logic. Progress remains tracked in `rollout.md`.
 
 ## Prerequisites
 
 ## Quick Start
 1. `cp .env.dist .env` and tweak ports/paths as desired.
 2. Download or cache models ahead of time if needed; otherwise the first `make up` will fetch them.
-3. Run `make build` to build all images (optional, compose will auto-build).
-4. Start the stack with `make up`; Vue frontend is on `http://localhost:${FRONTEND_PORT:-3000}` and Laravel API on `http://localhost:${BACKEND_PORT:-8080}`.
+3. Run `make build` to build all images manually if you want to prebuild ahead of time.
+4. Start the stack with `make up`; it rebuilds image-backed services so local code and startup scripts are current. Vue frontend is on `http://localhost:${FRONTEND_PORT:-3000}` and Laravel API on `http://localhost:${BACKEND_PORT:-8080}`.
 5. Apply Elasticsearch templates once the cluster is up: `make bootstrap-es`.
+   If bootstrap reports that an index "exists but has no mapped properties", that index was created by an older broken template run. Delete the affected app indices or reset the ES volume, then rerun `make bootstrap-es`.
 6. Run `make test` to execute backend/Python unit suites and a frontend build smoke.
 - Docker Engine 24+
 - Docker Compose plugin 2.20+
@@ -73,7 +44,7 @@ Populate credentials and tune resource-specific variables as needed.
 - `make up` – start the full stack in detached mode.
 - `make down` – stop and remove containers.
 - `make logs` – follow logs from all services.
-- `make test` – execute the verification suite (to be implemented).
+- `make test` – execute backend Laravel tests, Python service tests, and a frontend build smoke check.
 
 ## Services
 - Kibana: http://localhost:5601 (dashboard + index inspection)
@@ -111,9 +82,9 @@ scripts/
 Refer to `rollout.md` for the chronological implementation plan and to `AGENTS.md` for operating notes and guardrails.
 
 ## Next Steps
-- Fill in Dockerfiles and service bootstraps per rollout steps.
-- Implement automated tests mapped to `make test`.
-- Document model download and caching workflow once services are in place.
+- Add deeper semantic retrieval over stored `learning_resources`, `knowledge_snapshots`, and `user_profiles`.
+- Add citation-aware answer generation so the UI can show exactly which stored resources informed a response.
+- Add streaming assistant responses from `llm-engine` to the frontend.
 
 To bootstrap Elasticsearch templates after the cluster is running, execute `make bootstrap-es`.
 
@@ -133,7 +104,8 @@ Once Elasticsearch is running, execute `make bootstrap-es` to apply index templa
 > ⚠️ **Heads up:** Installing ROCm directly on the host can replace the stock Mesa/AMDGPU stack. On this machine it swapped the RX 6600 driver for an Aldebaran server stack until ROCm was fully removed. If you rely on the desktop driver, prefer containerised ROCm instead of host-level packages.
 
 ### Safer approach: ROCm inside Docker/Podman
-1. Install AMD’s out-of-tree repackaged runtime inside the container image (as `llm-engine` already does via the `rocm/dev-ubuntu` base image).
+1. Install AMD’s out-of-tree repackaged runtime inside the container image.
+   This project now builds `llm-engine` on `rocm/dev-ubuntu-22.04:6.1.2`, which satisfies the current `llama.cpp` HIP backend requirement.
 2. Map the GPU device nodes when launching services:
    ```yaml
    devices:
@@ -147,7 +119,7 @@ Once Elasticsearch is running, execute `make bootstrap-es` to apply index templa
 
 ### Optional host-side checks (no ROCm install required)
 ```bash
-lspci -nn | grep -E "VGA|Display"   # verify the GPU is the Radeon RX 6600 (gfx1032)
+lspci -nn | grep -E "VGA|Display"   # verify the GPU is the Radeon RX 6600
 lsmod | grep amdgpu                  # confirm the kernel module is loaded
 ```
 
@@ -171,7 +143,7 @@ If you still want to attempt a host installation, be aware it may alter the syst
    If you have customised Docker to run as a non-root user, identify it with `ps aux | grep dockerd` and add that account too; by default Docker runs as `root` so no extra step is needed. Logging out/back in achieves the same effect.
 3. **Set the correct GFX override** – if `rocminfo` shows a different GFX code, update `.env` and compose:
    ```bash
-   echo HSA_OVERRIDE_GFX_VERSION=gfx1032 >> .env
+   echo HSA_OVERRIDE_GFX_VERSION=10.3.0 >> .env
    ```
    Then reference `$HSA_OVERRIDE_GFX_VERSION` under the `environment:` section of `llm-engine` in `docker-compose.yml`.
 4. **Rebuild after ROCm updates** – whenever ROCm packages change on the host, rebuild the image so it links against the matching runtime:
@@ -179,3 +151,41 @@ If you still want to attempt a host installation, be aware it may alter the syst
    docker compose build llm-engine
    docker compose up -d llm-engine
    ```
+
+### Live verification markers
+After `make restart`, confirm GPU offload with:
+
+```bash
+docker compose logs --tail=200 llm-engine
+```
+
+Healthy GPU-backed startup should include lines like:
+
+- `ggml_cuda_init: found 1 ROCm devices`
+- `Device 0: AMD Radeon RX 6600`
+- `load_tensors: offloaded 32/33 layers to GPU`
+- `ROCm0 model buffer size`
+
+### Quick mode switch
+Use `.env` for the high-level switch:
+
+```bash
+LLM_ACCELERATION_MODE=gpu
+```
+
+or:
+
+```bash
+LLM_ACCELERATION_MODE=cpu
+```
+
+Then apply it with:
+
+```bash
+make restart
+```
+
+Implementation detail:
+
+- `LLM_ACCELERATION_MODE=gpu` keeps `LLM_GPU_LAYERS=32`
+- `LLM_ACCELERATION_MODE=cpu` forces `gpu_layers=0` and `HIP_VISIBLE_DEVICES=-1` inside the container entrypoint

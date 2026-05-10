@@ -1,0 +1,45 @@
+Now that flows.md is made create another file - detailed_flow_for_dummies.md where you will use inspiration from the story described in librarian_story.md where each librarian is one of:
+- frontend
+- backend
+- rag-orchestrator
+- llm-engine - Louis
+- embedding-worker - Emily
+- search-agent
+- elasticsearch
+- kibana
+
+First, for each librarian describe in plain, safe for kids way how it works in this library to show the general idea of what it is doing in the whole flow and how they exchange control of the flow.
+
+Second - list all files and configurations that belong to a given librarian in this project.
+
+Third, list EVERY flow technically in the project (professional language) and overlay the libraty story on it - so each part is professional+dummy child libary story.
+
+Fourth - create a professional only summary of all flows by creating a user story, for example:
+- user opens app
+- user types in what he needs to learn
+- fronent in X takes that and sends to backend to controller action Y
+- controller action Y delegates to service Z
+- etc
+Document a full learning experience that spans through a few sessions.
+
+Fifth - add logging EVERYWHERE at EVERY step to a single file with meaningful explanations what part of the flow it is, what is being done. The purpose of that is that I want to make a demo presentation, go through making a new learning plan and session and I want to show in the log how the flow progresses and what it does.
+
+Whenever the topic comes first also explain: - Retrieval-Augmented Generation (RAG), Embedding, Vector Store and Matrices (use easier terms like weights), BM25, Semantic Search, Calibration, Tuning Roadmap, Context Window, Grading Profile, HIP Acceleration, dependency graph.
+
+This will be used by an experienced backend php software developers that do not have any knowledge about RAG and LLM's s the most important purpose of the document you will generate is a gradual introduction into the idea using easy terms that a human mind can picture (workings in a library) and then transition into full technical understanding of every process and term, every configuration and why it got made in that specific way.
+
+Final warning - you may resacan the whole project as the current session is quite old.
+
+TODO
+- do not ask about time to learn
+- shitf+enter send
+- keep terminal at the bottom
+- keep browser window static, instead add container for scrolling the chat window, not the - browser window
+- links in chat are not clickable (missing markdown support on frontend):
+**Resources to review:**
+            - [Elasticsearch 101 - doc](https://www.elastic.co/guide/en/elasticsearch/reference/current/elasticsearch-intro.html)
+- [Elastic Certified Engineer Study - course](https://www.elastic.co/training/)
+- [Retrieval-Augmented Generation Roadmap - search_result](//duckduckgo.com/l/?uddg=https%3A%2F%2Falgomaster.io%2Froadmaps%2Frag&rut=681df8a9b1f69248be3d74c8d16b93012932501858860d2a48155f6734b7c15c)
+
+- progress indicator to the goal and plan (roadmap)
+- user registration and login, session list

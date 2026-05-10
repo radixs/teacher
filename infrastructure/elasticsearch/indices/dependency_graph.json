@@ -9,11 +9,24 @@
       "dynamic": "strict",
       "properties": {
         "concept_id": {"type": "keyword"},
+        "session_id": {"type": "keyword"},
         "concept_name": {"type": "text"},
         "prerequisites": {"type": "keyword"},
         "difficulty": {"type": "integer"},
         "phase": {"type": "keyword"},
         "summary": {"type": "text"},
+        "goal": {"type": "text"},
+        "confidence": {"type": "float"},
+        "exercise": {"type": "text"},
+        "resources": {
+          "type": "nested",
+          "dynamic": true,
+          "properties": {
+            "title": {"type": "text"},
+            "url": {"type": "keyword"},
+            "type": {"type": "keyword"}
+          }
+        },
         "created_at": {"type": "date"},
         "updated_at": {"type": "date"}
       }

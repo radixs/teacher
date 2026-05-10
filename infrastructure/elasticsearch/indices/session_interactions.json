@@ -3,10 +3,7 @@
   "template": {
     "settings": {
       "number_of_shards": 1,
-      "number_of_replicas": 0,
-      "index": {
-        "knn": true
-      }
+      "number_of_replicas": 0
     },
     "mappings": {
       "dynamic": "strict",
@@ -15,6 +12,7 @@
         "turn": {"type": "integer"},
         "role": {"type": "keyword"},
         "content": {"type": "text"},
+        "phase": {"type": "keyword"},
         "embedding": {
           "type": "dense_vector",
           "dims": 768,

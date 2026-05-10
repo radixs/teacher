@@ -3,19 +3,20 @@
   "template": {
     "settings": {
       "number_of_shards": 1,
-      "number_of_replicas": 0,
-      "index": {
-        "knn": true
-      }
+      "number_of_replicas": 0
     },
     "mappings": {
-      "dynamic": "false",
+      "dynamic": false,
       "properties": {
         "title": {"type": "text"},
         "url": {"type": "keyword"},
         "source": {"type": "keyword"},
         "type": {"type": "keyword"},
         "summary": {"type": "text"},
+        "content": {"type": "text"},
+        "snippet": {"type": "text"},
+        "session_id": {"type": "keyword"},
+        "concept_id": {"type": "keyword"},
         "embedding": {
           "type": "dense_vector",
           "dims": 768,

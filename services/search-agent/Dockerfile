@@ -22,7 +22,7 @@ COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 ENV SEARCH_AGENT_REQUEST_INTERVAL_SECONDS=2.0 \
-    SEARCH_AGENT_USER_AGENT=teacher-app-bot/0.1
+    SEARCH_AGENT_USER_AGENT="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
 EXPOSE 9205
 

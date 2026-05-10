@@ -74,15 +74,45 @@
           @submit="send"
         />
       </footer>
+      <section class="flow-console" aria-live="polite">
+        <div class="flow-console-header">
+          <div>
+            <h2>Live Flow Console</h2>
+            <p>Recent runtime events pushed from the running containers.</p>
+          </div>
+          <span class="flow-status" :class="flowConnectionState">
+            {{ flowStatusLabel }}
+          </span>
+        </div>
+        <div class="flow-console-body" ref="flowLogEl">
+          <p v-if="!flowEvents.length" class="flow-empty">
+            No live events yet. Start a session or send a message to see the flow.
+          </p>
+          <article
+            v-for="event in flowEvents"
+            :key="event.id"
+            class="flow-entry"
+          >
+            <header>
+              <span class="service">{{ event.service }}</span>
+              <span class="step">{{ event.step }}</span>
+              <time :datetime="event.timestamp">{{ formatEventTime(event.timestamp) }}</time>
+            </header>
+            <p>{{ event.message }}</p>
+            <pre v-if="hasContext(event.context)">{{ formatContext(event.context) }}</pre>
+          </article>
+        </div>
+      </section>
     </main>
   </div>
 </template>
 
 <script setup>
-import { computed, ref, watch, onMounted } from 'vue';
+import { computed, nextTick, ref, watch, onBeforeUnmount, onMounted } from 'vue';
 import { useStore } from 'vuex';
 import ChatInput from '@/components/ChatInput.vue';
 import ChatMessage from '@/components/ChatMessage.vue';
+import { createFlowEventStream } from '@/services/api';
 
 const store = useStore();
 const hasSession = computed(() => store.getters.hasSession);
@@ -90,10 +120,30 @@ const sessionHistory = computed(() => store.getters.sessionHistory);
 const goal = ref('');
 const profile = ref('');
 const historyEl = ref(null);
+const flowLogEl = ref(null);
+const flowEvents = ref([]);
+const flowConnectionState = ref('connecting');
+const chatPinnedToBottom = ref(true);
+const flowPinnedToBottom = ref(true);
+let flowEventSource = null;
+
+const MAX_FLOW_EVENTS = 24;
 
 const phaseLabel = computed(() => {
   const phase = store.state.phase ?? 'idle';
   return phase.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+});
+
+const flowStatusLabel = computed(() => {
+  if (flowConnectionState.value === 'open') {
+    return 'Live';
+  }
+
+  if (flowConnectionState.value === 'error') {
+    return 'Reconnecting';
+  }
+
+  return 'Connecting';
 });
 
 async function start() {
@@ -148,7 +198,8 @@ function formatUpdated(timestamp) {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
-    minute: '2-digit'
+    minute: '2-digit',
+    hour12: false
   }).format(date);
 }
 
@@ -158,13 +209,154 @@ function scrollToBottom() {
   }
 }
 
+function isNearBottom(element, threshold = 32) {
+  if (!element) {
+    return true;
+  }
+
+  return element.scrollHeight - element.scrollTop - element.clientHeight <= threshold;
+}
+
+function updateChatPinnedState() {
+  chatPinnedToBottom.value = isNearBottom(historyEl.value);
+}
+
+function updateFlowPinnedState() {
+  flowPinnedToBottom.value = isNearBottom(flowLogEl.value);
+}
+
+function scrollLogToBottom() {
+  if (flowLogEl.value) {
+    flowLogEl.value.scrollTop = flowLogEl.value.scrollHeight;
+  }
+}
+
+function hasContext(context) {
+  return Boolean(context && Object.keys(context).length);
+}
+
+function formatContext(context) {
+  return JSON.stringify(context, null, 2);
+}
+
+function formatEventTime(timestamp) {
+  if (!timestamp) {
+    return '';
+  }
+
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).format(date);
+}
+
+function appendFlowEvent(event) {
+  if (!event || !event.id) {
+    return;
+  }
+
+  const nextEvents = [...flowEvents.value, event];
+  const deduped = nextEvents.filter(
+    (entry, index, entries) => index === entries.findIndex((candidate) => candidate.id === entry.id)
+  );
+
+  flowEvents.value = deduped.slice(-1 * MAX_FLOW_EVENTS);
+}
+
+function connectFlowStream() {
+  if (typeof window === 'undefined' || flowEventSource) {
+    return;
+  }
+
+  flowEventSource = createFlowEventStream();
+  flowConnectionState.value = 'connecting';
+
+  flowEventSource.addEventListener('open', () => {
+    flowConnectionState.value = 'open';
+  });
+
+  flowEventSource.addEventListener('flow', (event) => {
+    flowConnectionState.value = 'open';
+
+    try {
+      appendFlowEvent(JSON.parse(event.data));
+    } catch (error) {
+      flowConnectionState.value = 'error';
+    }
+  });
+
+  flowEventSource.addEventListener('heartbeat', () => {
+    flowConnectionState.value = 'open';
+  });
+
+  flowEventSource.onerror = () => {
+    flowConnectionState.value = 'error';
+  };
+}
+
+function disconnectFlowStream() {
+  if (!flowEventSource) {
+    return;
+  }
+
+  flowEventSource.close();
+  flowEventSource = null;
+}
+
 watch(
   () => store.state.messages.length,
-  () => scrollToBottom()
+  async () => {
+    await nextTick();
+    if (chatPinnedToBottom.value) {
+      scrollToBottom();
+    }
+  },
+  { flush: 'post' }
+);
+
+watch(
+  () => store.state.loading,
+  async () => {
+    await nextTick();
+    if (chatPinnedToBottom.value) {
+      scrollToBottom();
+    }
+  },
+  { flush: 'post' }
+);
+
+watch(
+  () => flowEvents.value.length,
+  async () => {
+    await nextTick();
+    if (flowPinnedToBottom.value) {
+      scrollLogToBottom();
+    }
+  },
+  { flush: 'post' }
 );
 
 onMounted(() => {
+  historyEl.value?.addEventListener('scroll', updateChatPinnedState, { passive: true });
+  flowLogEl.value?.addEventListener('scroll', updateFlowPinnedState, { passive: true });
+  connectFlowStream();
   scrollToBottom();
+  scrollLogToBottom();
+  updateChatPinnedState();
+  updateFlowPinnedState();
+});
+
+onBeforeUnmount(() => {
+  historyEl.value?.removeEventListener('scroll', updateChatPinnedState);
+  flowLogEl.value?.removeEventListener('scroll', updateFlowPinnedState);
+  disconnectFlowStream();
 });
 </script>
 
@@ -273,11 +465,13 @@ button:disabled {
 .conversation {
   display: flex;
   flex-direction: column;
+  gap: 1rem;
   padding: 2rem;
 }
 
 .history {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding-right: 1rem;
   display: flex;
@@ -295,6 +489,127 @@ button:disabled {
   border-top: 1px solid rgba(148, 163, 184, 0.2);
 }
 
+.flow-console {
+  min-height: 240px;
+  max-height: 320px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 1rem;
+  background: rgba(15, 23, 42, 0.55);
+  overflow: hidden;
+}
+
+.flow-console-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.1rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+  background: rgba(15, 23, 42, 0.72);
+}
+
+.flow-console-header h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.flow-console-header p {
+  margin: 0.35rem 0 0;
+  font-size: 0.85rem;
+  opacity: 0.75;
+}
+
+.flow-status {
+  flex-shrink: 0;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.flow-status.connecting {
+  background: rgba(59, 130, 246, 0.2);
+  color: #bfdbfe;
+}
+
+.flow-status.open {
+  background: rgba(16, 185, 129, 0.2);
+  color: #a7f3d0;
+}
+
+.flow-status.error {
+  background: rgba(248, 113, 113, 0.2);
+  color: #fecaca;
+}
+
+.flow-console-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.9rem 1.1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  font-family: "IBM Plex Mono", "Fira Code", monospace;
+}
+
+.flow-empty {
+  margin: auto 0;
+  font-size: 0.9rem;
+  opacity: 0.7;
+}
+
+.flow-entry {
+  padding: 0.8rem 0.9rem;
+  border-radius: 0.85rem;
+  background: rgba(2, 6, 23, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.flow-entry header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.78rem;
+}
+
+.flow-entry .service {
+  color: #7dd3fc;
+  font-weight: 700;
+}
+
+.flow-entry .step {
+  color: #c4b5fd;
+}
+
+.flow-entry time {
+  margin-left: auto;
+  opacity: 0.65;
+}
+
+.flow-entry p {
+  margin: 0;
+  line-height: 1.45;
+  font-size: 0.9rem;
+}
+
+.flow-entry pre {
+  margin: 0.65rem 0 0;
+  padding: 0.65rem 0.75rem;
+  border-radius: 0.65rem;
+  overflow-x: auto;
+  background: rgba(15, 23, 42, 0.8);
+  color: #cbd5e1;
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 @media (max-width: 960px) {
   .chat-layout {
     grid-template-columns: 1fr;
@@ -303,6 +618,14 @@ button:disabled {
   .sidebar {
     border-right: none;
     border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  }
+
+  .conversation {
+    padding: 1rem;
+  }
+
+  .flow-console {
+    max-height: 360px;
   }
 }
 </style>

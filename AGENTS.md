@@ -8,7 +8,7 @@
 ## Canonical Architecture Snapshot
 - Core services: `frontend` (Vue/Vite), `backend` (Laravel 12), `rag-orchestrator` (FastAPI), `llm-engine` (llama.cpp), `embedding-worker` (sentence-transformers), `search-agent` (DuckDuckGo + scraping), `elasticsearch` (9.1.4), optional `kibana`.
 - Models: chat → `mistral-7b-instruct-v0.2` (Q4_K_M); embeddings → `bge-base-en-v1.5` (768 dims).
-- `llm-engine`: defaults to CPU inference (\`gpu_layers=0\`). Update `services/llm-engine/config.yaml` and rebuild if enabling HIP acceleration later.
+- `llm-engine`: defaults to HIP GPU inference on the RX 6600 (`LLM_ACCELERATION_MODE=gpu`, `gpu_layers=32`). Set `LLM_ACCELERATION_MODE=cpu` to force CPU fallback.
 - ES indices: `user_profiles`, `knowledge_snapshots`, `learning_resources`, `dependency_graph`, `session_interactions`.
 
 ## RAG & Interaction Rules

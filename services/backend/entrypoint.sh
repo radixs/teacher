@@ -12,6 +12,9 @@ if [ ! -f vendor/autoload.php ]; then
 fi
 
 php artisan key:generate --force
+export FLOW_EVENT_NAMESPACE="${FLOW_EVENT_NAMESPACE:-boot-$(date +%s)}"
+mkdir -p storage/framework/cache/flow-events
+find storage/framework/cache/flow-events -mindepth 1 -delete 2>/dev/null || true
 
 if [ "$#" -gt 0 ]; then
   exec "$@"

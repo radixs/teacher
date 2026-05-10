@@ -11,7 +11,32 @@ apply_template() {
   curl -sS -X PUT "$ES_URL/_index_template/$name" \
     -H 'Content-Type: application/json' \
     --data-binary "@$file" \
-    | jq '.'
+	    | jq '.'
+}
+
+ensure_index() {
+  local name="$1"
+  local response
+  local properties_count
+  local status
+
+  status=$(curl -s -o /dev/null -w '%{http_code}' "$ES_URL/$name")
+  if [ "$status" = "200" ]; then
+    echo "Index already exists: $name" >&2
+    response=$(curl -sS "$ES_URL/$name")
+    printf '%s\n' "$response" | jq '.'
+    properties_count=$(printf '%s\n' "$response" | jq 'to_entries[0].value.mappings.properties // {} | length')
+
+    if [ "$properties_count" = "0" ]; then
+      echo "Index $name exists but has no mapped properties. It was likely created before the template fix. Delete the index and rerun make bootstrap-es." >&2
+      return 1
+    fi
+
+    return 0
+  fi
+
+  echo "Creating index: $name" >&2
+  curl -sS -X PUT "$ES_URL/$name" | jq '.'
 }
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -21,12 +46,12 @@ for template in "$TEMPLATES_DIR"/*.json; do
   apply_template "$template"
   echo
   sleep 1
-fi
+done
 
 # Create indices explicitly to ensure availability
-curl -sS -X PUT "$ES_URL/user_profiles" | jq '.'
-curl -sS -X PUT "$ES_URL/knowledge_snapshots" | jq '.'
-curl -sS -X PUT "$ES_URL/learning_resources" | jq '.'
-curl -sS -X PUT "$ES_URL/dependency_graph" | jq '.'
-curl -sS -X PUT "$ES_URL/session_interactions" | jq '.'
-curl -sS -X PUT "$ES_URL/sessions" | jq '.'
+ensure_index "user_profiles"
+ensure_index "knowledge_snapshots"
+ensure_index "learning_resources"
+ensure_index "dependency_graph"
+ensure_index "session_interactions"
+ensure_index "sessions"

@@ -45,6 +45,10 @@ const client = axios.create({
   baseURL: resolveBaseUrl()
 });
 
+export const getApiBaseUrl = () => client.defaults.baseURL;
+
+export const createFlowEventStream = () => new EventSource(`${getApiBaseUrl()}/flow-events/stream`);
+
 export default {
   startSession(payload) {
     return client.post('/sessions', payload);

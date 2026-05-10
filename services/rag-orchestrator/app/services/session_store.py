@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import List
 
 from ..clients.elasticsearch import ElasticsearchClient
+from ..core.flow_logger import log_flow
 from ..models.session import Message, Session
 
 
@@ -72,14 +73,45 @@ class SessionStore:
     async def save(self, session: Session) -> None:
         document = _serialize_session(session)
         await self._client.upsert_document(self._index, session.id, document)
+        log_flow(
+            "rag-orchestrator",
+            "session_store.saved",
+            "SessionStore persisted the full session document to Elasticsearch.",
+            index=self._index,
+            session_id=session.id,
+            phase=session.phase,
+            message_count=len(session.messages),
+        )
 
     async def get(self, session_id: str) -> Session | None:
         payload = await self._client.get_document(self._index, session_id)
         if not payload:
+            log_flow(
+                "rag-orchestrator",
+                "session_store.miss",
+                "SessionStore could not find the requested session in Elasticsearch.",
+                index=self._index,
+                session_id=session_id,
+            )
             return None
+        log_flow(
+            "rag-orchestrator",
+            "session_store.hit",
+            "SessionStore loaded a session document from Elasticsearch.",
+            index=self._index,
+            session_id=session_id,
+            phase=payload.get("phase"),
+        )
         return _deserialize_session(payload)
 
     async def list(self) -> List[Session]:
         query = {"match_all": {}}
         payload = await self._client.search(self._index, query, size=500)
+        log_flow(
+            "rag-orchestrator",
+            "session_store.list",
+            "SessionStore listed persisted sessions during startup hydration.",
+            index=self._index,
+            count=len(payload),
+        )
         return [_deserialize_session(item) for item in payload]

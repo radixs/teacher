@@ -6,34 +6,34 @@ This document maps the runtime interactions between the containers that compose 
 
 ### 1.1 Calibration (session bootstrap)
 1. `frontend` collects learner answers via the Vue UI and POSTs them to `backend` (Laravel API).
-2. `backend` persists raw responses and metadata into Elasticsearch indices (`session_interactions`, `user_profiles`).
-3. `backend` requests a calibration prompt from `rag-orchestrator` (`/v1/sessions`).
-4. `rag-orchestrator` enriches the request by:
-   - Pulling prior insights from Elasticsearch (`knowledge_snapshots`, `dependency_graph`).
-   - Building semantic context blocks (previous answers, prerequisite graph edges).
-   - Forwarding the assembled prompt to `llm-engine` for natural language generation.
-5. `llm-engine` (llama.cpp + `mistral-7b-instruct` weights) returns the next calibration turn.
-6. `rag-orchestrator` stores the generated turn in Elasticsearch and responds to `backend`.
-7. `backend` relays the turn to `frontend` and updates session state for follow-up questions.
+2. `backend` forwards the start request to `rag-orchestrator` (`POST /v1/sessions`).
+3. `rag-orchestrator` asks `llm-engine` to generate a personalized set of calibration questions using the learner goal + optional profile summary.
+4. If the LLM output is missing or invalid, `rag-orchestrator` falls back to a deterministic default question set.
+5. `rag-orchestrator` stores the learner profile embedding in Elasticsearch (`user_profiles`) and stores the first assistant calibration turn in `session_interactions`.
+6. `rag-orchestrator` persists the full session document in Elasticsearch (`sessions`) and responds to `backend`.
+7. `backend` relays the initialized session to `frontend`, which stores it locally for resume.
 
 ### 1.2 Tuning (roadmap planning)
-1. Once calibration completes, `frontend` triggers roadmap generation via `backend`.
-2. `backend` calls `rag-orchestrator` (`/v1/roadmap`) with calibration insights.
-3. `rag-orchestrator` fetches relevant prerequisite links from Elasticsearch (`dependency_graph`).
-4. For missing context, it may invoke `search-agent` to pull supplemental material (DuckDuckGo HTML + scraping).
-5. `rag-orchestrator` consolidates retrieved knowledge and submits a roadmap prompt to `llm-engine`.
-6. Generated roadmap entries are embedded by `embedding-worker` and indexed into Elasticsearch (`learning_resources`).
-7. `backend` returns the structured roadmap to `frontend` for visualization.
+1. Once the final calibration answer arrives, the normal `POST /v1/sessions/{session_id}` flow stays inside `rag-orchestrator`; there is no separate `/v1/roadmap` endpoint.
+2. `rag-orchestrator` builds a focused search query and calls `search-agent` (`GET /v1/search` with enrichment disabled on the learner-facing hot path).
+3. `search-agent` retrieves DuckDuckGo result cards quickly; optional page scraping still exists in the service, but it is not used in the synchronous roadmap request because that added too much latency.
+4. `rag-orchestrator` embeds the retrieved resources via `embedding-worker` and stores them in Elasticsearch (`learning_resources`).
+5. `rag-orchestrator` sends calibration history + external resources to `llm-engine` and asks it for a structured roadmap JSON document.
+6. If the LLM output is unusable, `rag-orchestrator` falls back to an adaptive seed curriculum defined in `services/rag-orchestrator/app/services/tuning.py`.
+7. Final roadmap nodes are stored in Elasticsearch (`dependency_graph`), their resources are stored in `learning_resources`, and the first learning concept is returned to the learner.
 
 ### 1.3 Learning Loop (per concept)
 1. Learner actions (viewing resources, submitting exercises) flow from `frontend` to `backend`.
-2. For each learner question or exercise submission, `backend` calls `rag-orchestrator` (`/v1/assist` or `/v1/grade`).
-3. `rag-orchestrator` performs semantic retrieval:
-   - Queries Elasticsearch vector store using `embedding-worker` vectors.
-   - Merges lexical (BM25) and vector matches into a ranked context bundle.
-4. Context and learner inputs feed the prompt sent to `llm-engine`.
-5. Responses (hints, explanations, or evaluations) are stored in Elasticsearch (`session_interactions`, `knowledge_snapshots`).
-6. Grading flows additionally apply `grading_profiles.yaml` templates to structure evaluation JSON before returning to `backend`.
+2. For each learner exercise submission, `backend` calls `rag-orchestrator` through `POST /v1/sessions/{session_id}`.
+3. `rag-orchestrator` identifies the current roadmap concept and builds a grading prompt from:
+   - concept summary
+   - concept resources
+   - exercise text
+   - rubric from `grading_profiles.yaml`
+   - learner answer
+4. `llm-engine` receives the grading request through its OpenAI-compatible chat-completions endpoint first, with legacy `/completion` fallback for compatibility.
+5. If the model returns valid JSON, `ExerciseGrader` uses that result directly. If the model fails or returns invalid output, the local heuristic fallback is used to avoid blocking the session.
+6. Outcomes and assistant feedback are stored in Elasticsearch (`session_interactions`, `knowledge_snapshots`, `sessions`) before being returned to `backend`.
 
 ## 2. Supporting Data Flows
 
@@ -43,14 +43,15 @@ This document maps the runtime interactions between the containers that compose 
 - `rag-orchestrator` writes embeddings alongside metadata into Elasticsearch vector fields.
 
 ### 2.2 External Search Augmentation
-- `rag-orchestrator` calls `search-agent` when internal knowledge is insufficient or freshness is required.
-- `search-agent` fetches DuckDuckGo HTML, extracts organic results, and optionally scrapes pages (respecting robots and backoff rules).
-- Cleaned snippets are embedded, scored, and optionally indexed for reuse.
+- `rag-orchestrator` calls `search-agent` during roadmap generation to gather current public learning resources.
+- `search-agent` fetches DuckDuckGo HTML, extracts organic results, and returns titles, URLs, and snippets for the hot path.
+- Optional page scraping still exists behind `enrich=true`, but it is now treated as a slower operator capability rather than part of the main learner request.
+- Retrieved snippets are embedded and indexed into Elasticsearch (`learning_resources`) for reuse during later roadmap and lesson work.
 
 ### 2.3 Model Serving + Acceleration
-- `llm-engine` loads `mistral-7b-instruct` via llama.cpp with CPU execution by default (`gpu_layers=0`).
-- If HIP acceleration is enabled later, `llm-engine` consumes ROCm device mounts (`/dev/kfd`, `/dev/dri`) provided by Docker Compose.
-- Prompt/response traffic between `rag-orchestrator` and `llm-engine` is JSON over HTTP, with stream support planned.
+- `llm-engine` loads `mistral-7b-instruct` via llama.cpp with HIP layer offload enabled for the target RX 6600 (`LLM_ACCELERATION_MODE=gpu`, `LLM_GPU_LAYERS=32` by default).
+- `llm-engine` consumes ROCm device mounts (`/dev/kfd`, `/dev/dri`) provided by Docker Compose; CPU fallback remains available through a single `.env` switch: `LLM_ACCELERATION_MODE=cpu`.
+- Prompt/response traffic between `rag-orchestrator` and `llm-engine` is JSON over HTTP. `rag-orchestrator` prefers `/v1/chat/completions` and falls back to `/completion` when needed.
 
 ### 2.4 Observability and Inspection
 - `backend`, `rag-orchestrator`, and other services log to stdout; `make logs` aggregates container output.
