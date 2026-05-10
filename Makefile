@@ -2,15 +2,22 @@ SHELL := /bin/bash
 COMPOSE ?= docker compose
 PROJECT ?= teacher
 
-.PHONY: build up down restart logs ps test lint clean pull setup truncate-log prepare-demo-log
+.PHONY: build up rebuild down restart restart-build logs ps test lint clean pull setup truncate-log prepare-demo-log
 
 build:
 	$(COMPOSE) build
 
 up: prepare-demo-log
+	$(COMPOSE) up -d
+
+rebuild: prepare-demo-log
 	$(COMPOSE) up -d --build
 
 restart: prepare-demo-log
+	$(COMPOSE) down
+	$(COMPOSE) up -d
+
+restart-build: prepare-demo-log
 	$(COMPOSE) down
 	$(COMPOSE) up -d --build
 

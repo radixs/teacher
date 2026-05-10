@@ -20,12 +20,13 @@ The stack is still a scaffolded project, but the end-to-end learning path now ex
 
 ## Quick Start
 1. `cp .env.dist .env` and tweak ports/paths as desired.
-2. Download or cache models ahead of time if needed; otherwise the first `make up` will fetch them.
+2. Download or cache models ahead of time if needed; otherwise the first startup may fetch models or build missing images.
 3. Run `make build` to build all images manually if you want to prebuild ahead of time.
-4. Start the stack with `make up`; it rebuilds image-backed services so local code and startup scripts are current. Vue frontend is on `http://localhost:${FRONTEND_PORT:-3000}` and Laravel API on `http://localhost:${BACKEND_PORT:-8080}`.
-5. Apply Elasticsearch templates once the cluster is up: `make bootstrap-es`.
+4. Start the stack with `make up`; it starts containers from the currently available images and does not force a rebuild. Vue frontend is on `http://localhost:${FRONTEND_PORT:-3000}` and Laravel API on `http://localhost:${BACKEND_PORT:-8080}`.
+5. If you changed image-baked files such as Dockerfiles, entrypoints, or non-mounted service code, run `make rebuild` or `make build && make restart`.
+6. Apply Elasticsearch templates once the cluster is up: `make bootstrap-es`.
    If bootstrap reports that an index "exists but has no mapped properties", that index was created by an older broken template run. Delete the affected app indices or reset the ES volume, then rerun `make bootstrap-es`.
-6. Run `make test` to execute backend/Python unit suites and a frontend build smoke.
+7. Run `make test` to execute backend/Python unit suites and a frontend build smoke.
 - Docker Engine 24+
 - Docker Compose plugin 2.20+
 - GNU Make 4+
@@ -41,8 +42,11 @@ Populate credentials and tune resource-specific variables as needed.
 
 ## Make Targets
 - `make build` – build all service images.
-- `make up` – start the full stack in detached mode.
+- `make up` – start the full stack in detached mode using existing images.
+- `make rebuild` – rebuild changed images and start the stack.
 - `make down` – stop and remove containers.
+- `make restart` – restart the stack using existing images.
+- `make restart-build` – restart the stack and rebuild changed images.
 - `make logs` – follow logs from all services.
 - `make test` – execute backend Laravel tests, Python service tests, and a frontend build smoke check.
 

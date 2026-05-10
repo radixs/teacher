@@ -34,3 +34,5 @@ volumes/
 .idea/
 .vscode/
 .DS_Store
+
+TODO.txt
