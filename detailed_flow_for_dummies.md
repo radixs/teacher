@@ -138,19 +138,19 @@ Frontend does not decide what to teach. It only collects input, displays output,
 
 #### Files and configs
 
-- `services/frontend/Dockerfile`
-- `services/frontend/entrypoint.sh`
-- `services/frontend/app/src/main.js`
-- `services/frontend/app/src/App.vue`
-- `services/frontend/app/src/router/index.js`
-- `services/frontend/app/src/store/index.js`
-- `services/frontend/app/src/services/api.js`
-- `services/frontend/app/src/views/ChatView.vue`
-- `services/frontend/app/src/components/ChatInput.vue`
-- `services/frontend/app/src/components/ChatMessage.vue`
-- `services/frontend/app/src/styles.css`
-- Shared config: `docker-compose.yml`
-- Shared env: `.env.dist` values `FRONTEND_PORT`, `FRONTEND_INTERNAL_PORT`, `FRONTEND_VITE_API_BASE_URL`
+- Shared env: `.env.dist` values `FRONTEND_PORT`, `FRONTEND_INTERNAL_PORT`, `FRONTEND_VITE_API_BASE_URL` - Control host port exposure and the backend base URL that browser requests target. These values decide how the frontend enters the rest of the flow.
+- Shared config: `docker-compose.yml` - Declares how the frontend container starts, which port it exposes, and how it reaches the backend. This is the frontend's runtime wiring into the multi-container stack.
+- `services/frontend/Dockerfile` - Builds the Node/Vite container image for the browser app. It matters at startup time when Docker needs a runnable frontend environment.
+- `services/frontend/entrypoint.sh` - Starts the frontend dev server inside the container. This is the frontend's runtime launch point in the compose flow.
+- `services/frontend/app/src/main.js` - Bootstraps Vue, Vuex, and the router, then hydrates stored session state before mount. This is the first browser code that starts the learner flow.
+- `services/frontend/app/src/store/index.js` - Holds browser-side state, localStorage restore logic, and the actions that call the backend. This is the frontend control center for session lifecycle.
+- `services/frontend/app/src/services/api.js` - Wraps Axios and the live `EventSource` connection to Laravel. It is the frontend's network bridge into backend APIs and the pushed flow console.
+- `services/frontend/app/src/App.vue` - Root Vue shell that hosts the router view. It is the top-level frame around the whole UI flow.
+- `services/frontend/app/src/router/index.js` - Defines browser routes and points the app at the chat screen. It controls which top-level page is shown.
+- `services/frontend/app/src/views/ChatView.vue` - Main screen for starting sessions, showing messages, and displaying the live flow console. This is where the learner interacts with the system most directly.
+- `services/frontend/app/src/components/ChatInput.vue` - Input box and submit behavior for learner turns. It is the last frontend step before a message becomes an API call.
+- `services/frontend/app/src/components/ChatMessage.vue` - Renders each message in the transcript with role-specific formatting. It turns backend/orchestrator responses into visible conversation history.
+- `services/frontend/app/src/styles.css` - Global frontend styling, typography, and base layout defaults. It shapes the look and readability of the app around the main chat flow.
 
 ### 4.2 Backend
 
@@ -176,40 +176,43 @@ Backend is the gatekeeper. It does not invent the lesson content, but it control
 
 #### Files and configs
 
-- `services/backend/Dockerfile`
-- `services/backend/entrypoint.sh`
-- `services/backend/app/app/Http/Controllers/Controller.php`
-- `services/backend/app/app/Http/Controllers/Api/ChatSessionController.php`
-- `services/backend/app/app/Models/User.php`
-- `services/backend/app/app/Providers/AppServiceProvider.php`
-- `services/backend/app/app/Providers/RagServiceProvider.php`
-- `services/backend/app/app/Services/Rag/RagClient.php`
-- `services/backend/app/app/Support/FlowLogger.php`
-- `services/backend/app/routes/api.php`
-- `services/backend/app/routes/web.php`
-- `services/backend/app/routes/console.php`
-- `services/backend/app/config/app.php`
-- `services/backend/app/config/auth.php`
-- `services/backend/app/config/cache.php`
-- `services/backend/app/config/database.php`
-- `services/backend/app/config/filesystems.php`
-- `services/backend/app/config/logging.php`
-- `services/backend/app/config/mail.php`
-- `services/backend/app/config/queue.php`
-- `services/backend/app/config/rag.php`
-- `services/backend/app/config/services.php`
-- `services/backend/app/config/session.php`
-- `services/backend/app/storage/logs/.gitignore`
-- `services/backend/app/storage/app/.gitignore`
-- `services/backend/app/storage/app/public/.gitignore`
-- `services/backend/app/storage/app/private/.gitignore`
-- `services/backend/app/storage/framework/cache/.gitignore`
-- `services/backend/app/storage/framework/cache/data/.gitignore`
-- `services/backend/app/storage/framework/sessions/.gitignore`
-- `services/backend/app/storage/framework/views/.gitignore`
-- `services/backend/app/storage/framework/testing/.gitignore`
-- Shared config: `docker-compose.yml`
-- Shared env: `.env.dist` values `BACKEND_PORT`, `APP_ENV`, `APP_DEBUG`, `RAG_ORCHESTRATOR_URL` via runtime env
+- Shared env: `.env.dist` values `BACKEND_PORT`, `APP_ENV`, `APP_DEBUG`, `RAG_ORCHESTRATOR_URL`, `FLOW_EVENT_*` via runtime env - Control how Laravel is exposed, how noisy it is, where it forwards learner requests, and how live flow events are buffered and streamed.
+- Shared config: `docker-compose.yml` - Defines backend ports, mounts, dependencies, and env injection. It is the runtime contract that places Laravel between the browser and Python services.
+- `services/backend/Dockerfile` - Builds the PHP CLI image with Laravel dependencies and extensions. It creates the container that fronts every browser API call.
+- `services/backend/entrypoint.sh` - Prepares the Laravel app and starts `php artisan serve`. It is the backend container's runtime launch sequence.
+- `services/backend/app/config/app.php` - Core Laravel application settings such as app name, environment, and providers. It shapes backend runtime behavior globally.
+- `services/backend/app/app/Providers/AppServiceProvider.php` - Generic Laravel service bootstrapping point. It is where app-wide framework registrations would live.
+- `services/backend/app/config/rag.php` - URLs, timeouts, and Elasticsearch-related integration settings for the RAG stack. This file directly controls how Laravel reaches the orchestrator and related services.
+- `services/backend/app/config/flow_events.php` - Settings for the live event buffer, retention, polling, and token protection. It controls how pushed logs become browser-visible flow events.
+- `services/backend/app/config/cache.php` - Cache store definitions, including the dedicated store for live flow events. It supports both framework caching and the browser event buffer.
+- `services/backend/app/app/Providers/RagServiceProvider.php` - Registers `RagClient`, flow logging, and the flow event stream services. This is the backend wiring layer for PHP-to-Python handoff and live event push.
+- `services/backend/app/routes/api.php` - Maps browser-facing API routes to the chat and flow-event controllers. It defines the HTTP entrypoints into backend-controlled flow.
+- `services/backend/app/app/Http/Controllers/Controller.php` - Base Laravel controller class. It provides the common controller foundation used by API endpoints.
+- `services/backend/app/app/Http/Controllers/Api/ChatSessionController.php` - Defines the public session start, message, and resume endpoints. This is the first PHP code hit by the frontend on the learner hot path.
+- `services/backend/app/app/Services/Rag/RagClient.php` - Wraps HTTP calls from Laravel into `rag-orchestrator`. It is the backend bridge that forwards validated learner requests downstream.
+- `services/backend/app/app/Support/FlowLogger.php` - Writes backend flow lines and mirrors them into the browser event stream. It is the backend observability hook around each request transition.
+- `services/backend/app/app/Http/Controllers/Api/FlowEventController.php` - Accepts pushed flow events from services and streams them to the browser with SSE. It powers the live flow console without reading the log file.
+- `services/backend/app/app/Support/FlowEventStream.php` - Maintains the rolling event buffer used by SSE clients. It is the in-backend memory-like queue behind the live flow console.
+- `services/backend/app/routes/web.php` - Default Laravel web route definitions. It is not part of the SPA API hot path.
+- `services/backend/app/routes/console.php` - Artisan command route definitions. It belongs to operator and maintenance flow, not learner traffic.
+- `services/backend/app/config/auth.php` - Authentication guard and provider settings. It is mostly scaffolding today because the learning flow is not user-auth driven yet.
+- `services/backend/app/config/database.php` - Database connection definitions. It mostly backs framework features rather than the Elasticsearch-based learning session model.
+- `services/backend/app/config/filesystems.php` - Filesystem disk settings. It matters when Laravel needs local/public/private storage locations.
+- `services/backend/app/config/logging.php` - Standard Laravel log-channel configuration. It governs framework logging separately from the custom demo flow logger.
+- `services/backend/app/config/mail.php` - Mail transport settings. It is not active in the current learner request flow.
+- `services/backend/app/config/queue.php` - Queue backend configuration. It matters for deferred work later, though the current hot path stays synchronous.
+- `services/backend/app/config/services.php` - Third-party service configuration scaffold. It is standard Laravel infrastructure and not central to the current learning flow.
+- `services/backend/app/config/session.php` - Laravel framework session settings. It is separate from the domain-level learning session persisted in Elasticsearch.
+- `services/backend/app/app/Models/User.php` - Default Laravel user model scaffold. It is not central to the current anonymous learning flow but remains part of the backend application skeleton.
+- `services/backend/app/storage/logs/.gitignore` - Keeps the Laravel log directory in git without storing generated logs. It preserves the writable runtime path used by the container.
+- `services/backend/app/storage/app/.gitignore` - Keeps the app storage root present in git. It reserves the writable file area Laravel expects at runtime.
+- `services/backend/app/storage/app/public/.gitignore` - Keeps the public storage directory present. It is the expected location for publicly exposed generated files if used later.
+- `services/backend/app/storage/app/private/.gitignore` - Keeps the private storage directory present. It is the reserved location for non-public generated files.
+- `services/backend/app/storage/framework/cache/.gitignore` - Keeps the framework cache root in version control as an empty writable directory. It supports file-based cache behavior inside the container.
+- `services/backend/app/storage/framework/cache/data/.gitignore` - Keeps the nested Laravel file-cache directory present. It is used when cache entries are written to disk.
+- `services/backend/app/storage/framework/sessions/.gitignore` - Keeps the Laravel framework session directory present. It supports file-based framework sessions if enabled.
+- `services/backend/app/storage/framework/views/.gitignore` - Keeps the compiled-view directory present. Laravel writes rendered Blade cache files here when needed.
+- `services/backend/app/storage/framework/testing/.gitignore` - Keeps the testing storage directory present. It supports isolated runtime artifacts during PHPUnit runs.
 
 ### 4.3 RAG Orchestrator
 
@@ -237,43 +240,43 @@ If frontend is the welcome desk and backend is the gatekeeper, `rag-orchestrator
 
 #### Files and configs
 
-- `services/rag-orchestrator/Dockerfile`
-- `services/rag-orchestrator/entrypoint.sh`
-- `services/rag-orchestrator/requirements.txt`
-- `services/rag-orchestrator/app/__init__.py`
-- `services/rag-orchestrator/app/main.py`
-- `services/rag-orchestrator/app/api/__init__.py`
-- `services/rag-orchestrator/app/api/routes/__init__.py`
-- `services/rag-orchestrator/app/api/routes/sessions.py`
-- `services/rag-orchestrator/app/clients/__init__.py`
-- `services/rag-orchestrator/app/clients/elasticsearch.py`
-- `services/rag-orchestrator/app/clients/embedding.py`
-- `services/rag-orchestrator/app/clients/llm.py`
-- `services/rag-orchestrator/app/clients/search.py`
-- `services/rag-orchestrator/app/core/__init__.py`
-- `services/rag-orchestrator/app/core/config.py`
-- `services/rag-orchestrator/app/core/dependencies.py`
-- `services/rag-orchestrator/app/core/flow_logger.py`
-- `services/rag-orchestrator/app/models/__init__.py`
-- `services/rag-orchestrator/app/models/api.py`
-- `services/rag-orchestrator/app/models/session.py`
-- `services/rag-orchestrator/app/services/__init__.py`
-- `services/rag-orchestrator/app/services/calibration.py`
-- `services/rag-orchestrator/app/services/grading.py`
-- `services/rag-orchestrator/app/services/lab_primer.py`
-- `services/rag-orchestrator/app/services/learning.py`
-- `services/rag-orchestrator/app/services/session_manager.py`
-- `services/rag-orchestrator/app/services/session_store.py`
-- `services/rag-orchestrator/app/services/tuning.py`
-- `services/rag-orchestrator/app/tests/__init__.py`
-- `services/rag-orchestrator/app/tests/test_sessions.py`
-- `services/rag-orchestrator/config/grading_profiles.yaml`
-- `services/rag-orchestrator/lab_templates/README.md.tpl`
-- `services/rag-orchestrator/lab_templates/docker-compose.yml.tpl`
-- `services/rag-orchestrator/lab_templates/Makefile.tpl`
-- `services/rag-orchestrator/lab_templates/notes.md.tpl`
-- Shared config: `docker-compose.yml`
-- Shared env: `.env.dist` values `RAG_HOST`, `RAG_PORT`, `RAG_RELOAD`, `RAG_LLM_ENGINE_URL`, `RAG_EMBEDDING_SERVICE_URL`, `RAG_SEARCH_AGENT_URL`, `RAG_ELASTICSEARCH_URL`, `RAG_INDEX_*`, `RAG_GRADING_PROFILE`, `RAG_GRADING_CONFIG_PATH`, `RAG_LAB_TEMPLATE_DIR`, `RAG_LAB_OUTPUT_ROOT`, `RAG_LAB_AUTO_WRITE`
+- Shared env: `.env.dist` values `RAG_HOST`, `RAG_PORT`, `RAG_RELOAD`, `RAG_LLM_ENGINE_URL`, `RAG_EMBEDDING_SERVICE_URL`, `RAG_SEARCH_AGENT_URL`, `RAG_ELASTICSEARCH_URL`, `RAG_INDEX_*`, `RAG_GRADING_PROFILE`, `RAG_GRADING_CONFIG_PATH`, `RAG_LAB_TEMPLATE_DIR`, `RAG_LAB_OUTPUT_ROOT`, `RAG_LAB_AUTO_WRITE` - Control where the orchestrator listens, which downstream services it calls, where it persists data, and how grading/lab generation behave in the flow.
+- Shared config: `docker-compose.yml` - Declares ports, dependency ordering, mounted code/config paths, and shared logs. It places the orchestrator in the middle of all other runtime containers.
+- `services/rag-orchestrator/Dockerfile` - Builds the FastAPI orchestration service image. It packages the code that owns the real learning workflow.
+- `services/rag-orchestrator/entrypoint.sh` - Starts the FastAPI server with configured host and port. It is the runtime launch point for the orchestrator container.
+- `services/rag-orchestrator/requirements.txt` - Declares Python dependencies such as FastAPI and integration clients. It defines what the orchestrator needs to run its state machine.
+- `services/rag-orchestrator/app/main.py` - Creates the FastAPI app, registers startup/shutdown hooks, and attaches routers. It is the service bootstrap point for orchestrator lifecycle and preload behavior.
+- `services/rag-orchestrator/app/core/config.py` - Reads and exposes environment-backed service settings. It controls URLs, index names, and feature-level runtime behavior.
+- `services/rag-orchestrator/app/core/dependencies.py` - Defines FastAPI dependency providers. It wires route handlers to shared clients and services.
+- `services/rag-orchestrator/app/core/flow_logger.py` - Emits orchestrator flow logs and mirrors them into the browser event stream. It is the observability hook around the central workflow engine.
+- `services/rag-orchestrator/app/models/api.py` - Defines Pydantic API contracts for incoming and outgoing HTTP payloads. It protects the shape of the orchestrator's public interface.
+- `services/rag-orchestrator/app/models/session.py` - Defines the in-memory and persisted session structures. It is the data model underneath every phase transition.
+- `services/rag-orchestrator/app/api/routes/sessions.py` - Defines the core `/v1/sessions` endpoints and phase transitions. This is the single hottest code path in the whole learning flow.
+- `services/rag-orchestrator/app/services/session_manager.py` - Mutates session state in memory across calibration, tuning, and learning. It is the phase-transition engine for a single learner session.
+- `services/rag-orchestrator/app/services/calibration.py` - Generates calibration questions and lightweight knowledge snapshots. It owns the warm-up and learner-profiling stage.
+- `services/rag-orchestrator/app/services/tuning.py` - Builds search queries and roadmap structures from calibration answers and retrieved resources. It owns the bridge from learner profile to learning plan.
+- `services/rag-orchestrator/app/services/learning.py` - Builds concept overviews, exercises, and next-step learner messages. It shapes the active teaching phase.
+- `services/rag-orchestrator/app/services/grading.py` - Builds grading prompts, parses model JSON, and applies heuristic fallback. It controls pass/retry decisions during learning.
+- `services/rag-orchestrator/config/grading_profiles.yaml` - Stores grading rubrics, thresholds, and expected feedback structure. It is the main configuration source for evaluation behavior.
+- `services/rag-orchestrator/app/services/lab_primer.py` - Renders `/lab` output from templates. It owns the practice-kit branch outside the normal lesson answer path.
+- `services/rag-orchestrator/lab_templates/README.md.tpl` - Template for the generated lab README. It explains the exercise package returned by `/lab`.
+- `services/rag-orchestrator/lab_templates/docker-compose.yml.tpl` - Template for the generated lab container setup. It gives learners a runnable environment recipe.
+- `services/rag-orchestrator/lab_templates/Makefile.tpl` - Template for the generated lab helper commands. It turns the lab package into a more guided operator flow.
+- `services/rag-orchestrator/lab_templates/notes.md.tpl` - Template for generated study or exercise notes. It rounds out the `/lab` package with human-readable guidance.
+- `services/rag-orchestrator/app/services/session_store.py` - Saves and restores full session documents from Elasticsearch. It gives the orchestrator stateless process resilience across visits and restarts.
+- `services/rag-orchestrator/app/clients/search.py` - Calls `search-agent` for external resources. It is the orchestrator's web-retrieval connector during roadmap generation.
+- `services/rag-orchestrator/app/clients/embedding.py` - Calls `embedding-worker` over HTTP. It is the orchestrator-to-vector-service bridge.
+- `services/rag-orchestrator/app/clients/llm.py` - Calls `llm-engine` using chat-completions first with fallback behavior. It is the orchestrator's text-generation and grading gateway.
+- `services/rag-orchestrator/app/clients/elasticsearch.py` - Encapsulates reads and writes to Elasticsearch indices. It is the persistence adapter for sessions, interactions, snapshots, graph nodes, resources, and profiles.
+- `services/rag-orchestrator/app/tests/test_sessions.py` - Exercises the session endpoints and major phase transitions under pytest. It validates the orchestrator hot path in automated checks.
+- `services/rag-orchestrator/app/__init__.py` - Marks the top-level app package. It supports Python module loading for the orchestrator codebase.
+- `services/rag-orchestrator/app/api/__init__.py` - Marks the API package. It organizes HTTP-facing code under a clear namespace.
+- `services/rag-orchestrator/app/api/routes/__init__.py` - Marks the routes package. It keeps route modules grouped cleanly for FastAPI import wiring.
+- `services/rag-orchestrator/app/clients/__init__.py` - Marks the downstream client package. It groups adapters that call other services.
+- `services/rag-orchestrator/app/core/__init__.py` - Marks the core package. It keeps low-level app wiring grouped separately from business logic.
+- `services/rag-orchestrator/app/models/__init__.py` - Marks the models package. It groups request, response, and session data structures.
+- `services/rag-orchestrator/app/services/__init__.py` - Marks the service-layer package. It keeps business logic modules grouped together.
+- `services/rag-orchestrator/app/tests/__init__.py` - Marks the test package. It supports Python test discovery for the orchestrator suite.
 
 ### 4.4 LLM Engine (Louis)
 
@@ -287,21 +290,21 @@ Louis does not manage the whole library. Louis only answers when asked.
 
 - Hosts llama.cpp server.
 - Loads Mistral 7B Instruct GGUF file.
-- Uses CPU by default, with optional HIP/ROCm acceleration later.
-- Current hot-path usage is mainly grading via `LlmClient`.
+- Uses HIP/ROCm GPU offload by default on the RX 6600, with CPU fallback available through `LLM_ACCELERATION_MODE=cpu`.
+- Current hot-path usage includes calibration question generation, roadmap generation, and grading through `LlmClient`.
 
 #### Handoff behavior
 
-- Receives HTTP completion requests from `rag-orchestrator`.
+- Receives HTTP completion requests from `rag-orchestrator` for calibration, tuning, and grading work.
 - Returns generated text or fails, which triggers fallback behavior upstream.
 
 #### Files and configs
 
-- `services/llm-engine/Dockerfile`
-- `services/llm-engine/entrypoint.sh`
-- `services/llm-engine/config.yaml`
-- Shared config: `docker-compose.yml`
-- Shared env: `.env.dist` values `LLM_ENGINE_PORT`, `LLM_MODEL_URL`, `LLM_CONTEXT_WINDOW`, `LLM_THREADS`, `LLM_BATCH_SIZE`, `LLM_ACCELERATION_MODE`, `LLM_GPU_LAYERS`, `LLM_SERVER_HOST`, `LLM_SERVER_PORT`, `HSA_OVERRIDE_GFX_VERSION`, `HIP_VISIBLE_DEVICES`
+- Shared env: `.env.dist` values `LLM_ENGINE_PORT`, `LLM_MODEL_URL`, `LLM_CONTEXT_WINDOW`, `LLM_THREADS`, `LLM_BATCH_SIZE`, `LLM_ACCELERATION_MODE`, `LLM_GPU_LAYERS`, `LLM_SERVER_HOST`, `LLM_SERVER_PORT`, `HSA_OVERRIDE_GFX_VERSION`, `HIP_VISIBLE_DEVICES` - Override model location, prompt window, throughput settings, and CPU/GPU behavior. These values decide how fast and where model inference runs.
+- Shared config: `docker-compose.yml` - Mounts the model volume, exposes port 8000, injects runtime env, and maps GPU devices. It is the container-level wiring that lets the orchestrator reach Louis.
+- `services/llm-engine/Dockerfile` - Builds the llama.cpp runtime image with ROCm support and the server binary. It defines how Louis becomes a runnable GPU-capable container.
+- `services/llm-engine/entrypoint.sh` - Resolves config/env, downloads the model if needed, chooses CPU or GPU mode, and starts `llama-server`. It is the main runtime controller for model startup.
+- `services/llm-engine/config.yaml` - Declares the model file, context window, GPU layer count, threads, and batch size. It directly governs memory usage, acceleration, and request capacity in the model flow.
 
 ### 4.5 Embedding Worker (Emily)
 
@@ -323,15 +326,15 @@ Emily is the librarian who turns text into meaning-shape cards. Emily does not e
 
 #### Files and configs
 
-- `services/embedding-worker/Dockerfile`
-- `services/embedding-worker/entrypoint.sh`
-- `services/embedding-worker/requirements.txt`
-- `services/embedding-worker/app/__init__.py`
-- `services/embedding-worker/app/main.py`
-- `services/embedding-worker/app/flow_logger.py`
-- `services/embedding-worker/app/tests/test_embed.py`
-- Shared config: `docker-compose.yml`
-- Shared env: `.env.dist` values `EMBEDDING_PORT`, `EMBEDDING_MODEL_NAME`, `EMBEDDING_MODEL_NAME_OR_PATH`, `EMBEDDING_DEVICE`, `EMBEDDING_CACHE_DIR`, `EMBEDDING_DIMENSIONS`
+- Shared env: `.env.dist` values `EMBEDDING_PORT`, `EMBEDDING_MODEL_NAME`, `EMBEDDING_MODEL_NAME_OR_PATH`, `EMBEDDING_DEVICE`, `EMBEDDING_CACHE_DIR`, `EMBEDDING_DIMENSIONS` - Control which embedding model runs, where it is cached, whether it uses CPU or another device, and what vector shape the rest of the flow expects.
+- Shared config: `docker-compose.yml` - Exposes the embedding port and mounts the model cache volume. It is the runtime wiring that makes Emily reachable from the orchestrator.
+- `services/embedding-worker/Dockerfile` - Builds the sentence-transformers service image. It packages Emily's vector-making environment.
+- `services/embedding-worker/entrypoint.sh` - Starts the FastAPI embedding service inside the container. It is the embedding worker's runtime launch point.
+- `services/embedding-worker/requirements.txt` - Declares Python and ML dependencies for embeddings. It defines the software stack behind vector generation.
+- `services/embedding-worker/app/main.py` - Defines the `/embed` endpoint and lazy model-load behavior. This is the hot path that turns learner or resource text into vectors.
+- `services/embedding-worker/app/flow_logger.py` - Emits embedding-service flow logs and browser-visible events. It provides observability around vector requests and model loading.
+- `services/embedding-worker/app/tests/test_embed.py` - Verifies the embedding endpoint returns expected vector structure. It guards the service contract used by the orchestrator.
+- `services/embedding-worker/app/__init__.py` - Marks the embedding app package. It supports module import structure for the service.
 
 ### 4.6 Search Agent
 
@@ -344,7 +347,7 @@ This librarian is the one allowed to walk outside your library and check other p
 - FastAPI service.
 - Queries DuckDuckGo HTML endpoint.
 - Can optionally fetch and clean result pages for richer content.
-- Exists as an external knowledge connector, although it is not yet on the main learner hot path.
+- Acts as the external knowledge connector and is now part of the tuning hot path after calibration completes.
 
 #### Handoff behavior
 
@@ -353,23 +356,23 @@ This librarian is the one allowed to walk outside your library and check other p
 
 #### Files and configs
 
-- `services/search-agent/Dockerfile`
-- `services/search-agent/entrypoint.sh`
-- `services/search-agent/requirements.txt`
-- `services/search-agent/app/__init__.py`
-- `services/search-agent/app/main.py`
-- `services/search-agent/app/config.py`
-- `services/search-agent/app/flow_logger.py`
-- `services/search-agent/app/routes/__init__.py`
-- `services/search-agent/app/routes/search.py`
-- `services/search-agent/app/clients/__init__.py`
-- `services/search-agent/app/clients/duckduckgo.py`
-- `services/search-agent/app/scrapers/__init__.py`
-- `services/search-agent/app/scrapers/simple.py`
-- `services/search-agent/app/tests/__init__.py`
-- `services/search-agent/app/tests/test_parse.py`
-- Shared config: `docker-compose.yml`
-- Shared env: `.env.dist` values `SEARCH_AGENT_PORT`, `DUCKDUCKGO_REQUEST_INTERVAL_SECONDS`, `DUCKDUCKGO_USER_AGENT`
+- Shared env: `.env.dist` values `SEARCH_AGENT_PORT`, `DUCKDUCKGO_REQUEST_INTERVAL_SECONDS`, `DUCKDUCKGO_USER_AGENT` - Control where the service listens and how aggressively or politely it hits DuckDuckGo. These settings shape the speed and compliance behavior of external retrieval.
+- Shared config: `docker-compose.yml` - Exposes the search port and injects runtime env. It is the runtime wiring that puts the outside-search librarian on the network for orchestrator calls.
+- `services/search-agent/Dockerfile` - Builds the FastAPI search service image. It packages the external-retrieval librarian into a runnable container.
+- `services/search-agent/entrypoint.sh` - Starts the search API inside the container. It is the runtime launch path for the web retrieval service.
+- `services/search-agent/requirements.txt` - Declares HTTP, parsing, and FastAPI dependencies. It defines the software needed to query DuckDuckGo and clean results.
+- `services/search-agent/app/main.py` - Creates the FastAPI app and startup behavior. It is the bootstrap point for the search service.
+- `services/search-agent/app/config.py` - Reads environment-backed settings such as request interval and user agent. It controls how politely and consistently the service searches the web.
+- `services/search-agent/app/flow_logger.py` - Emits search-service flow logs and browser-visible events. It makes retrieval behavior observable during roadmap generation.
+- `services/search-agent/app/routes/search.py` - Defines the `/v1/search` endpoint, request parsing, and result assembly. This is the active tuning-flow entrypoint used by the orchestrator.
+- `services/search-agent/app/clients/duckduckgo.py` - Implements DuckDuckGo HTML querying and result extraction. It is the first external retrieval step in the search flow.
+- `services/search-agent/app/scrapers/simple.py` - Fetches and cleans individual result pages when enrichment is enabled. It supports the slower, richer branch of external retrieval.
+- `services/search-agent/app/tests/test_parse.py` - Verifies result parsing behavior. It protects the normalized search-card contract consumed by the orchestrator.
+- `services/search-agent/app/__init__.py` - Marks the app package. It supports Python import structure for the service.
+- `services/search-agent/app/routes/__init__.py` - Marks the routes package. It keeps HTTP endpoint modules grouped together.
+- `services/search-agent/app/clients/__init__.py` - Marks the client package. It groups lower-level retrieval adapters.
+- `services/search-agent/app/scrapers/__init__.py` - Marks the scraper package. It groups optional page-enrichment helpers.
+- `services/search-agent/app/tests/__init__.py` - Marks the test package. It supports Python test discovery for the search service.
 
 ### 4.7 Elasticsearch
 
@@ -397,19 +400,19 @@ Elasticsearch is the giant catalog room with shelves, card drawers, and special 
 
 #### Files and configs
 
-- `infrastructure/elasticsearch/config/elasticsearch.yml`
-- `infrastructure/elasticsearch/config/jvm.options`
-- `infrastructure/elasticsearch/config/log4j2.properties`
-- `infrastructure/elasticsearch/config/elasticsearch.keystore`
-- `infrastructure/elasticsearch/indices/sessions.json`
-- `infrastructure/elasticsearch/indices/session_interactions.json`
-- `infrastructure/elasticsearch/indices/knowledge_snapshots.json`
-- `infrastructure/elasticsearch/indices/dependency_graph.json`
-- `infrastructure/elasticsearch/indices/learning_resources.json`
-- `infrastructure/elasticsearch/indices/user_profiles.json`
-- `infrastructure/elasticsearch/scripts/bootstrap.sh`
-- Shared config: `docker-compose.yml`
-- Shared env: `.env.dist` values `ELASTICSEARCH_PORT`, `ELASTICSEARCH_TRANSPORT_PORT`, `ELASTICSEARCH_HOST`, `ELASTICSEARCH_USERNAME`, `ELASTICSEARCH_PASSWORD`
+- Shared env: `.env.dist` values `ELASTICSEARCH_PORT`, `ELASTICSEARCH_TRANSPORT_PORT`, `ELASTICSEARCH_HOST`, `ELASTICSEARCH_USERNAME`, `ELASTICSEARCH_PASSWORD` - Control how Elasticsearch is exposed and how clients would authenticate if credentials were used. These settings define how the rest of the system finds the catalog room.
+- Shared config: `docker-compose.yml` - Declares the Elasticsearch image, ports, mounted config, mounted templates, and data volume. It is the container-level setup that turns storage into a running service for the rest of the stack.
+- `infrastructure/elasticsearch/config/elasticsearch.yml` - Main Elasticsearch node configuration. It defines how the catalog room process starts and behaves.
+- `infrastructure/elasticsearch/config/jvm.options` - JVM memory and runtime settings for Elasticsearch. It shapes heap usage and stability for the storage engine.
+- `infrastructure/elasticsearch/config/log4j2.properties` - Elasticsearch logging configuration. It controls how the storage service records its own internal logs.
+- `infrastructure/elasticsearch/config/elasticsearch.keystore` - Secure-settings store used by Elasticsearch. In this local setup it mainly preserves the expected secure-config artifact for the container.
+- `infrastructure/elasticsearch/scripts/bootstrap.sh` - Applies templates and creates indices in the right order. It is the operator step that prepares the catalog room before real learner flow begins.
+- `infrastructure/elasticsearch/indices/sessions.json` - Index template for full session documents. It stores the top-level learner folder that the orchestrator restores later.
+- `infrastructure/elasticsearch/indices/user_profiles.json` - Index template for learner profile summaries and embeddings. It stores the semantic profile created at session start.
+- `infrastructure/elasticsearch/indices/session_interactions.json` - Index template for per-message interaction records. It stores the turn-by-turn conversation trace used for audit and later retrieval.
+- `infrastructure/elasticsearch/indices/knowledge_snapshots.json` - Index template for synthesized calibration and learning snapshots. It stores compact knowledge-state summaries for later reuse.
+- `infrastructure/elasticsearch/indices/learning_resources.json` - Index template for public resources and concept materials, including vectors. It stores the retrieved and generated materials used around tuning and learning.
+- `infrastructure/elasticsearch/indices/dependency_graph.json` - Index template for roadmap nodes and graph-like learning structure. It stores the plan the learner is meant to walk through.
 
 ### 4.8 Kibana
 
@@ -429,9 +432,9 @@ Kibana is the glass observation room. It does not teach the visitor. It lets the
 
 #### Files and configs
 
-- Shared config: `docker-compose.yml`
-- Shared env: `.env.dist` value `KIBANA_PORT`
-- There is no dedicated local `infrastructure/kibana` tree in the current repository snapshot.
+- Shared env: `.env.dist` value `KIBANA_PORT` - Controls which host port exposes Kibana in the browser. It decides how humans enter the inspection flow.
+- Shared config: `docker-compose.yml` - Starts the vendor Kibana image and points it at Elasticsearch. This is the only repository-owned wiring for the observation-room UI.
+- There is no dedicated local `infrastructure/kibana` tree in the current repository snapshot. Kibana is currently configured as a vendor container rather than a custom code module in this repo.
 
 ## 5. Every Flow In The Project: Technical View + Library Story Overlay
 
