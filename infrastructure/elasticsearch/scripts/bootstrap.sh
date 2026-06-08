@@ -3,6 +3,19 @@ set -euo pipefail
 
 ES_URL="${ELASTICSEARCH_URL:-http://elasticsearch:9200}"
 
+configure_single_node_dev_cluster() {
+  echo "Configuring single-node development cluster settings" >&2
+  curl -sS -X PUT "$ES_URL/_cluster/settings" \
+    -H 'Content-Type: application/json' \
+    --data-binary @- <<'JSON' | jq '.'
+{
+  "persistent": {
+    "cluster.routing.allocation.disk.threshold_enabled": false
+  }
+}
+JSON
+}
+
 apply_template() {
   local file="$1"
   local name
@@ -41,6 +54,8 @@ ensure_index() {
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TEMPLATES_DIR="$SCRIPT_DIR/../indices"
+
+configure_single_node_dev_cluster
 
 for template in "$TEMPLATES_DIR"/*.json; do
   apply_template "$template"

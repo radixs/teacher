@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -74,6 +75,27 @@ class CalibrationPlannerService:
         try:
             questions_document = self._parse_questions_document(response_text)
         except Exception as exc:
+            recovered_questions = self._extract_questions_from_text(response_text)
+            if len(recovered_questions) >= calibration_planner_config.minimum_usable_questions:
+                log_flow(
+                    "rag-orchestrator",
+                    "calibration.questions.recovered",
+                    "Calibration parser recovered enough questions from malformed LLM output.",
+                    goal=self.goal,
+                    count=len(recovered_questions),
+                )
+                final_questions = recovered_questions[
+                    : calibration_planner_config.question_count
+                ]
+                log_flow(
+                    "rag-orchestrator",
+                    "calibration.questions.generated",
+                    "LLM generated the calibration question set for the new session.",
+                    goal=self.goal,
+                    count=len(final_questions),
+                )
+                return final_questions
+
             log_flow(
                 "rag-orchestrator",
                 "calibration.questions.failed",
@@ -172,3 +194,37 @@ class CalibrationPlannerService:
         if len(lines) >= 2 and lines[0].startswith("```") and lines[-1].startswith("```"):
             return "\n".join(lines[1:-1]).strip()
         return response_text
+
+    @staticmethod
+    def _extract_questions_from_text(response_text: str) -> list[str]:
+        question_matches = re.findall(
+            r'"question"\s*:\s*"((?:\\.|[^"\\])*)"',
+            response_text,
+            flags=re.DOTALL,
+        )
+        recovered_questions: list[str] = []
+        for raw_match in question_matches:
+            try:
+                normalized_question = json.loads(f'"{raw_match}"').strip()
+            except json.JSONDecodeError:
+                normalized_question = raw_match.replace('\\"', '"').strip()
+            if normalized_question and normalized_question not in recovered_questions:
+                recovered_questions.append(normalized_question)
+
+        if recovered_questions:
+            return recovered_questions
+
+        fallback_questions: list[str] = []
+        for raw_line in response_text.splitlines():
+            normalized_line = raw_line.strip()
+            if not normalized_line:
+                continue
+            if re.match(r"^[-*]\s+", normalized_line):
+                normalized_line = re.sub(r"^[-*]\s+", "", normalized_line)
+            elif re.match(r"^\d+[.)]\s+", normalized_line):
+                normalized_line = re.sub(r"^\d+[.)]\s+", "", normalized_line)
+            if "?" in normalized_line:
+                candidate_question = normalized_line.strip('", ')
+                if candidate_question and candidate_question not in fallback_questions:
+                    fallback_questions.append(candidate_question)
+        return fallback_questions

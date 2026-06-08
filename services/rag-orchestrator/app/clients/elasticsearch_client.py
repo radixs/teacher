@@ -35,7 +35,8 @@ class ElasticsearchClient:
         if embedding:
             document["embedding"] = embedding
 
-        await self._client.post(f"/{index}/_doc", json=document)
+        response = await self._client.post(f"/{index}/_doc", json=document)
+        response.raise_for_status()
         log_flow(
             "elasticsearch",
             "interaction.stored",
@@ -65,7 +66,8 @@ class ElasticsearchClient:
         if embedding:
             snapshot_document["embedding"] = embedding
 
-        await self._client.post(f"/{index}/_doc", json=snapshot_document)
+        response = await self._client.post(f"/{index}/_doc", json=snapshot_document)
+        response.raise_for_status()
         log_flow(
             "elasticsearch",
             "snapshot.stored",
@@ -79,7 +81,8 @@ class ElasticsearchClient:
     async def store_dependency_node(self, index: str, node: Dict[str, Any]) -> None:
         dependency_node_document = dict(node)
         dependency_node_document.setdefault("created_at", datetime.utcnow().isoformat())
-        await self._client.post(f"/{index}/_doc", json=dependency_node_document)
+        response = await self._client.post(f"/{index}/_doc", json=dependency_node_document)
+        response.raise_for_status()
         log_flow(
             "elasticsearch",
             "dependency_node.stored",
@@ -99,7 +102,8 @@ class ElasticsearchClient:
         learning_resource_document.setdefault("created_at", datetime.utcnow().isoformat())
         if embedding:
             learning_resource_document["embedding"] = embedding
-        await self._client.post(f"/{index}/_doc", json=learning_resource_document)
+        response = await self._client.post(f"/{index}/_doc", json=learning_resource_document)
+        response.raise_for_status()
         log_flow(
             "elasticsearch",
             "learning_resource.stored",
@@ -128,7 +132,11 @@ class ElasticsearchClient:
         }
         if knowledge_vector:
             user_profile_document["knowledge_vector"] = knowledge_vector
-        await self._client.put(f"/{index}/_doc/{document_id}", json=user_profile_document)
+        response = await self._client.put(
+            f"/{index}/_doc/{document_id}",
+            json=user_profile_document,
+        )
+        response.raise_for_status()
         log_flow(
             "elasticsearch",
             "user_profile.upserted",
@@ -142,7 +150,8 @@ class ElasticsearchClient:
         await self._client.aclose()
 
     async def upsert_document(self, index: str, document_id: str, document: Dict[str, Any]) -> None:
-        await self._client.put(f"/{index}/_doc/{document_id}", json=document)
+        response = await self._client.put(f"/{index}/_doc/{document_id}", json=document)
+        response.raise_for_status()
         log_flow(
             "elasticsearch",
             "document.upserted",

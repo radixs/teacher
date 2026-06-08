@@ -16,7 +16,7 @@ BASE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 CONFIG_DIR="$BASE_DIR/infrastructure/elasticsearch"
 
 attempt=1
-until curl -fsS "$ES_URL/_cluster/health?wait_for_status=yellow&timeout=1s" >/dev/null; do
+until curl -fsS "$ES_URL/_cluster/health?timeout=1s" >/dev/null; do
   if [ "$attempt" -ge "$MAX_ATTEMPTS" ]; then
     echo "Elasticsearch not reachable or not ready at $ES_URL after $MAX_ATTEMPTS attempts" >&2
     exit 1

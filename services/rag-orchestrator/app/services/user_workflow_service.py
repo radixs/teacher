@@ -115,39 +115,65 @@ class UserWorkflowService:
         session_model = self._session_manager_service.add_message(session_model, user_message_model)
         stripped_message = message.strip()
 
-        if stripped_message.startswith("/lab"):
-            return await self._handle_lab_command(
-                session_model=session_model,
-                message=message,
-                metadata=metadata,
-            )
-
-        embedding = await self._embedding_client.embed(message)
-        await self._learning_memory_repository.store_interaction(
-            session_id=session_id,
-            role="user",
-            content=message,
-            turn=session_model.current_turn(),
-            embedding=embedding,
-            metadata=metadata,
-            phase=session_model.phase,
-        )
-
         if session_model.phase in {"calibration", "tuning"}:
-            assistant_message_model = await self._calibration_workflow_service.handle_answer(
-                session_model=session_model,
-                message=message,
-                embedding=embedding,
-            )
+            try:
+                if stripped_message.startswith("/lab"):
+                    return await self._handle_lab_command(
+                        session_model=session_model,
+                        message=message,
+                        metadata=metadata,
+                    )
+
+                embedding = await self._embedding_client.embed(message)
+                await self._learning_memory_repository.store_interaction(
+                    session_id=session_id,
+                    role="user",
+                    content=message,
+                    turn=session_model.current_turn(),
+                    embedding=embedding,
+                    metadata=metadata,
+                    phase=session_model.phase,
+                )
+
+                assistant_message_model = await self._calibration_workflow_service.handle_answer(
+                    session_model=session_model,
+                    message=message,
+                    embedding=embedding,
+                )
+            except Exception:
+                await self._session_repository.save(session_model)
+                raise
         elif session_model.phase == "learning":
             try:
+                if stripped_message.startswith("/lab"):
+                    return await self._handle_lab_command(
+                        session_model=session_model,
+                        message=message,
+                        metadata=metadata,
+                    )
+
+                embedding = await self._embedding_client.embed(message)
+                await self._learning_memory_repository.store_interaction(
+                    session_id=session_id,
+                    role="user",
+                    content=message,
+                    turn=session_model.current_turn(),
+                    embedding=embedding,
+                    metadata=metadata,
+                    phase=session_model.phase,
+                )
+
                 assistant_message_model = await self._learning_workflow_service.handle_answer(
                     session_model=session_model,
                     message=message,
                     embedding=embedding,
                 )
             except ValueError as exc:
+                await self._session_repository.save(session_model)
                 raise LearningPlanNotInitializedError(str(exc)) from exc
+            except Exception:
+                await self._session_repository.save(session_model)
+                raise
         else:
             assistant_message_model = MessageModel(
                 role="assistant",

@@ -495,6 +495,27 @@ class WrappedCalibrationLlmClient:
         return {"text": ""}
 
 
+class MalformedCalibrationLlmClient:
+    async def generate(self, prompt, context=None, **kwargs):
+        if "Create 6 calibration questions" in prompt:
+            return {
+                "text": (
+                    '{\n'
+                    '"questions": [\n'
+                    '{"question":"Have you ever used a programming language before? If yes, which one?","assessment":"Prior knowledge"},\n'
+                    '{"question":"What kind of software or automation projects have you completed before?","assessment":"Hands-on experience"},\n'
+                    '{"question":"Have you built any API or backend application before?","assessment":"Hands-on experience"},\n'
+                    '{"question":"What kind of AI engineer role are you aiming for specifically?","assessment":"Target outcome"},\n'
+                    '{"question":"How comfortable are you with Linux, Docker, or command-line workflows?","assessment":"Tooling baseline"},\n'
+                    '{"question":"What part of AI systems feels most unclear to you right now?","assessment":"Knowledge gap"},\n'
+                    ']\n'
+                    '}\n'
+                    "Questions ready."
+                )
+            }
+        return {"text": ""}
+
+
 class FakeElasticsearchClient:
     def __init__(self) -> None:
         self.interactions = []
@@ -637,6 +658,21 @@ def test_start_session_accepts_wrapped_calibration_questions():
         app.dependency_overrides[get_llm_client] = lambda: FakeLlmClient()
 
 
+def test_start_session_recovers_questions_from_malformed_calibration_json():
+    app.dependency_overrides[get_llm_client] = lambda: MalformedCalibrationLlmClient()
+
+    try:
+        response = client.post("/v1/sessions", json={"goal": "Become AI engineer"})
+        assert response.status_code == 200
+        session_response_document = response.json()
+        assert (
+            session_response_document["messages"][-1]["content"]
+            == "Have you ever used a programming language before? If yes, which one?"
+        )
+    finally:
+        app.dependency_overrides[get_llm_client] = lambda: FakeLlmClient()
+
+
 def test_start_session_returns_503_when_calibration_generation_fails():
     original_llm_override = app.dependency_overrides[get_llm_client]
     app.dependency_overrides[get_llm_client] = lambda: InvalidCalibrationLlmClient()
@@ -667,6 +703,26 @@ def test_calibration_transitions_to_learning():
     assert session_payload["messages"][-1]["metadata"]["stage"] == "learning_intro"
     assert len(fake_elastic.dependency_nodes) >= 1
     assert len(fake_elastic.learning_resources) >= 1
+
+
+def test_session_restores_from_repository_when_memory_store_is_empty():
+    start = client.post("/v1/sessions", json={"goal": "Learn ESRE"})
+    session_id = start.json()["id"]
+
+    client.post(
+        f"/v1/sessions/{session_id}",
+        json={"message": "Calibration answer iteration 0"},
+    )
+
+    fake_session_manager_service._store.clear()
+
+    restored_response = client.get(f"/v1/sessions/{session_id}")
+    assert restored_response.status_code == 200
+    restored_session_document = restored_response.json()
+    assert restored_session_document["id"] == session_id
+    assert len(restored_session_document["messages"]) >= 4
+    assert restored_session_document["messages"][1]["metadata"]["stage"] == "calibration"
+    assert fake_session_manager_service.get_session(session_id).id == session_id
 
 
 def test_calibration_completion_returns_503_when_search_fails():
@@ -715,6 +771,41 @@ def test_calibration_completion_returns_503_when_roadmap_generation_fails():
 
     assert failure_response.status_code == 503
     assert "Tuning roadmap generation" in failure_response.json()["detail"]
+
+
+def test_failed_message_processing_still_persists_session_for_restore():
+    original_llm_override = app.dependency_overrides[get_llm_client]
+    app.dependency_overrides[get_llm_client] = lambda: InvalidRoadmapLlmClient()
+    start = client.post("/v1/sessions", json={"goal": "Learn ESRE"})
+    session_id = start.json()["id"]
+    try:
+        for i in range(5):
+            response = client.post(
+                f"/v1/sessions/{session_id}",
+                json={"message": f"I am sharing calibration info iteration {i}"},
+            )
+            assert response.status_code == 200
+
+        failure_response = client.post(
+            f"/v1/sessions/{session_id}",
+            json={"message": "I am sharing calibration info iteration 5"},
+        )
+        assert failure_response.status_code == 503
+
+        fake_session_manager_service._store.clear()
+
+        restored_response = client.get(f"/v1/sessions/{session_id}")
+    finally:
+        app.dependency_overrides[get_llm_client] = original_llm_override
+
+    assert restored_response.status_code == 200
+    restored_session_document = restored_response.json()
+    assert restored_session_document["messages"][-1]["role"] == "user"
+    assert restored_session_document["messages"][-1]["content"] == "I am sharing calibration info iteration 5"
+    assert (
+        fake_session_manager_service.get_session(session_id).calibration_history[-1]["answer"]
+        == "I am sharing calibration info iteration 5"
+    )
 
 
 def test_calibration_completion_accepts_code_fenced_roadmap_json():

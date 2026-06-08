@@ -3,6 +3,7 @@ from __future__ import annotations
 """HTTP endpoints for session-related FastAPI requests."""
 
 from typing import Annotated
+import httpx
 
 from fastapi import APIRouter, Body, Depends, HTTPException, status
 
@@ -75,6 +76,11 @@ async def post_session(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
         ) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="RAG persistence failed because Elasticsearch rejected or could not accept the write.",
+        ) from exc
 
     log_flow(
         "rag-orchestrator",
@@ -130,6 +136,11 @@ async def post_message(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
         ) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="RAG persistence failed because Elasticsearch rejected or could not accept the write.",
+        ) from exc
 
     log_flow(
         "rag-orchestrator",
@@ -164,6 +175,11 @@ async def get_session(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc),
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="RAG persistence failed because Elasticsearch rejected or could not accept the read or write.",
         ) from exc
 
     log_flow(

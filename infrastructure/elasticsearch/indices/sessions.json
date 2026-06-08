@@ -15,7 +15,11 @@
             "keyword": { "type": "keyword", "ignore_above": 256 }
           }
         },
-        "profile": { "type": "object", "enabled": true },
+        "profile": {
+          "type": "object",
+          "enabled": true,
+          "dynamic": true
+        },
         "phase": { "type": "keyword" },
         "messages": {
           "type": "nested",
@@ -23,7 +27,11 @@
             "role": { "type": "keyword" },
             "content": { "type": "text" },
             "created_at": { "type": "date" },
-            "metadata": { "type": "object", "enabled": true }
+            "metadata": {
+              "type": "object",
+              "enabled": true,
+              "dynamic": true
+            }
           }
         },
         "calibration_queue": { "type": "keyword" },

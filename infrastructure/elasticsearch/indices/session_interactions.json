@@ -19,7 +19,11 @@
           "index": true,
           "similarity": "cosine"
         },
-        "metadata": {"type": "object", "enabled": true},
+        "metadata": {
+          "type": "object",
+          "enabled": true,
+          "dynamic": true
+        },
         "created_at": {"type": "date"}
       }
     }
