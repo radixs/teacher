@@ -24,7 +24,7 @@ After finishing this runbook, you should have manually verified:
 - learning resource ingestion into `learning_resources`
 - roadmap persistence into `dependency_graph`
 - grading path through `llm-engine`
-- heuristic grading fallback visibility if the model output is bad
+- strict grading failure visibility if the model output is bad
 - session persistence and resume from Elasticsearch
 - `/lab` generation
 - Kibana inspection of the stored documents
@@ -159,8 +159,8 @@ If localStorage still contains a previous session id:
   - `rag-orchestrator | api.sessions.show.completed`
   - or:
     - `elasticsearch | document.hit`
-    - `rag-orchestrator | session_store.hit`
-    - `rag-orchestrator | session.registered`
+    - `rag-orchestrator | session_repository.hit`
+    - `rag-orchestrator | session.loaded`
     - `rag-orchestrator | api.sessions.show.restored`
     - `rag-orchestrator | api.sessions.show.completed`
 
@@ -198,15 +198,8 @@ You should see a sequence close to this:
 - `backend | rag.start_session.dispatch`
 - `rag-orchestrator | api.sessions.start.received`
 - `llm-engine | completion.requested`
-- either:
-  - `llm-engine | completion.received`
-  - or:
-    - `llm-engine | completion.chat_failed`
-    - `llm-engine | completion.received`
-- either:
-  - `rag-orchestrator | calibration.questions.generated`
-  - or:
-    - `rag-orchestrator | calibration.questions.fallback`
+- `llm-engine | completion.received`
+- `rag-orchestrator | calibration.questions.generated`
 - `rag-orchestrator | session.created`
 - `rag-orchestrator | calibration.question.selected`
 - `rag-orchestrator | message.appended`
@@ -216,7 +209,7 @@ You should see a sequence close to this:
 - `elasticsearch | user_profile.upserted`
 - `elasticsearch | interaction.stored`
 - `elasticsearch | document.upserted`
-- `rag-orchestrator | session_store.saved`
+- `rag-orchestrator | session_repository.saved`
 - `rag-orchestrator | api.sessions.start.completed`
 - `backend | rag.start_session.response`
 - `backend | http.sessions.start.completed`
@@ -265,7 +258,7 @@ You should see:
 - `rag-orchestrator | calibration.next_question`
 - `elasticsearch | interaction.stored`
 - `elasticsearch | document.upserted`
-- `rag-orchestrator | session_store.saved`
+- `rag-orchestrator | session_repository.saved`
 - `rag-orchestrator | api.sessions.message.completed`
 - `backend | rag.send_message.response`
 - `backend | http.sessions.message.completed`
@@ -325,11 +318,8 @@ Then resource ingestion:
 Then roadmap generation:
 
 - `llm-engine | completion.requested`
-- usually `llm-engine | completion.received`
-- either:
-  - `rag-orchestrator | tuning.plan.generated`
-  - or:
-    - `rag-orchestrator | tuning.plan.fallback`
+- `llm-engine | completion.received`
+- `rag-orchestrator | tuning.plan.generated`
 
 Then session transition:
 
@@ -340,7 +330,7 @@ Then session transition:
 - `rag-orchestrator | learning.plan_ready`
 - `elasticsearch | interaction.stored`
 - `elasticsearch | document.upserted`
-- `rag-orchestrator | session_store.saved`
+- `rag-orchestrator | session_repository.saved`
 - `rag-orchestrator | api.sessions.message.completed`
 
 ### What this proves
@@ -348,7 +338,6 @@ Then session transition:
 - search-agent is now part of the main flow
 - external resources are stored in `learning_resources`
 - roadmap generation is LLM-driven first
-- fallback roadmap generation is still available
 - `dependency_graph` is now filled from the real tuning flow
 
 ## 9. Test Case 5: Inspect Data In Kibana After Roadmap Generation
@@ -443,16 +432,14 @@ You should see:
 - `rag-orchestrator | learning.evaluation.started`
 - `rag-orchestrator | grading.started`
 - `llm-engine | completion.requested`
-- one of:
-  - `rag-orchestrator | grading.llm_result`
-  - `rag-orchestrator | grading.heuristic_fallback`
+- `rag-orchestrator | grading.llm_result`
 - `rag-orchestrator | learning.outcome.recorded`
 - `elasticsearch | snapshot.stored`
 - `rag-orchestrator | learning.evaluation.completed`
 - `rag-orchestrator | message.appended`
 - `elasticsearch | interaction.stored`
 - `elasticsearch | document.upserted`
-- `rag-orchestrator | session_store.saved`
+- `rag-orchestrator | session_repository.saved`
 - `rag-orchestrator | api.sessions.message.completed`
 
 If the retry path is taken, the final backend completion log should contain stage `learning_retry`.
@@ -460,9 +447,8 @@ If the retry path is taken, the final backend completion log should contain stag
 ### What this proves
 
 - grading is called from the learning path
-- failures do not crash the session
+- successful grading advances the normal learning flow
 - feedback is persisted
-- heuristic fallback is visible if model output is malformed
 
 ## 11. Test Case 7: Submit A Strong Learning Answer And Check Pass Path
 
@@ -499,7 +485,7 @@ You should see:
 - `rag-orchestrator | message.appended`
 - `elasticsearch | interaction.stored`
 - `elasticsearch | document.upserted`
-- `rag-orchestrator | session_store.saved`
+- `rag-orchestrator | session_repository.saved`
 - `rag-orchestrator | api.sessions.message.completed`
 
 ### What this proves
@@ -541,7 +527,7 @@ You should see:
 - `rag-orchestrator | message.appended` for the assistant response
 - `elasticsearch | interaction.stored` for the assistant response
 - `elasticsearch | document.upserted`
-- `rag-orchestrator | session_store.saved`
+- `rag-orchestrator | session_repository.saved`
 - `rag-orchestrator | api.sessions.message.completed`
 
 ### What this proves
@@ -581,8 +567,8 @@ If the session is still in the in-memory store:
 If the session had to be restored from Elasticsearch:
 
 - `elasticsearch | document.hit`
-- `rag-orchestrator | session_store.hit`
-- `rag-orchestrator | session.registered`
+- `rag-orchestrator | session_repository.hit`
+- `rag-orchestrator | session.loaded`
 - `rag-orchestrator | api.sessions.show.restored`
 - `rag-orchestrator | api.sessions.show.completed`
 
@@ -633,58 +619,59 @@ These log lines do not always mean total failure, but they mean you should inspe
 
 ### Calibration warnings
 
-- `rag-orchestrator | calibration.questions.fallback`
+- `rag-orchestrator | calibration.questions.failed`
 
 Meaning:
 
 - LLM question generation failed
-- fallback question list was used
+- session creation should fail with HTTP `503`
 
 ### Roadmap warnings
 
-- `rag-orchestrator | tuning.plan.fallback`
+- `rag-orchestrator | completion.failed`
+- `rag-orchestrator | api.sessions.message.received` followed by HTTP `503`
 
 Meaning:
 
 - LLM roadmap generation failed
-- fallback adaptive curriculum was used
+- roadmap generation should stop explicitly
 
 ### Search warnings
 
-- `search-agent | search.fallback`
 - `search-agent | search.failed`
+- `rag-orchestrator | api.sessions.message.received` followed by HTTP `503`
 
 Meaning:
 
-- full search flow degraded
-- roadmap generation continued without external results
+- external search failed
+- roadmap generation should stop explicitly
 
 Only expect `search-agent | search.enrich_skipped` if you manually exercise `search-agent` with `enrich=true`. It is not part of the normal frontend session flow anymore.
 
 ### LLM warnings
 
-- `llm-engine | completion.chat_failed`
 - `llm-engine | completion.failed`
 
 Meaning:
 
-- chat-completions endpoint failed
-- legacy completion fallback may have been used
-- or the LLM was unavailable entirely
+- the LLM request failed
+- the active learner flow should fail explicitly instead of degrading silently
 
 ### Grading warnings
 
-- `rag-orchestrator | grading.heuristic_fallback`
+- `rag-orchestrator | grading.started`
+- `llm-engine | completion.failed`
+- `rag-orchestrator | api.sessions.message.received` followed by HTTP `503`
 
 Meaning:
 
-- the grader did not receive usable JSON from the model
-- local scoring logic was used instead
+- the grader did not receive usable model output
+- the learning turn should fail explicitly instead of using local scoring logic
 
 ### Resume warnings
 
 - `elasticsearch | document.miss`
-- `rag-orchestrator | session_store.miss`
+- `rag-orchestrator | session_repository.miss`
 
 Meaning:
 

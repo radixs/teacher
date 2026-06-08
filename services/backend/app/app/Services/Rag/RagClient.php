@@ -4,7 +4,7 @@ namespace App\Services\Rag;
 
 use App\Support\FlowLogger;
 use Illuminate\Http\Client\PendingRequest;
-use Illuminate\Support\Facades\Http;
+use Illuminate\Http\Client\Response;
 
 class RagClient
 {
@@ -15,7 +15,7 @@ class RagClient
     ) {
     }
 
-    public function startSession(array $payload): array
+    public function startSession(array $payload): Response
     {
         $this->flowLogger->log(
             'backend',
@@ -29,23 +29,21 @@ class RagClient
         );
 
         $response = $this->http->post('/v1/sessions', $payload);
-        $data = $response->json();
-
         $this->flowLogger->log(
             'backend',
             'rag.start_session.response',
             'Backend received the session-start response from rag-orchestrator.',
             [
                 'status' => $response->status(),
-                'session_id' => $data['id'] ?? null,
-                'phase' => $data['phase'] ?? null,
+                'session_id' => $response->json('id'),
+                'phase' => $response->json('phase'),
             ],
         );
 
-        return $data;
+        return $response;
     }
 
-    public function sendMessage(string $sessionId, array $payload): array
+    public function sendMessage(string $sessionId, array $payload): Response
     {
         $this->flowLogger->log(
             'backend',
@@ -60,8 +58,6 @@ class RagClient
         );
 
         $response = $this->http->post("/v1/sessions/{$sessionId}", $payload);
-        $data = $response->json();
-
         $this->flowLogger->log(
             'backend',
             'rag.send_message.response',
@@ -69,14 +65,14 @@ class RagClient
             [
                 'status' => $response->status(),
                 'session_id' => $sessionId,
-                'phase' => $data['session']['phase'] ?? null,
+                'phase' => $response->json('session.phase'),
             ],
         );
 
-        return $data;
+        return $response;
     }
 
-    public function fetchSession(string $sessionId): array
+    public function fetchSession(string $sessionId): Response
     {
         $this->flowLogger->log(
             'backend',
@@ -89,20 +85,18 @@ class RagClient
         );
 
         $response = $this->http->get("/v1/sessions/{$sessionId}");
-        $data = $response->json();
-
         $this->flowLogger->log(
             'backend',
             'rag.fetch_session.response',
             'Backend received the stored session payload from rag-orchestrator.',
             [
                 'status' => $response->status(),
-                'session_id' => $data['id'] ?? $sessionId,
-                'phase' => $data['phase'] ?? null,
+                'session_id' => $response->json('id') ?? $sessionId,
+                'phase' => $response->json('phase'),
             ],
         );
 
-        return $data;
+        return $response;
     }
 
     public function getElasticsearchConfig(): array

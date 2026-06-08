@@ -10,10 +10,10 @@ This repository hosts a containerized learning companion that guides users throu
 - Demo-friendly end-to-end trace file: `infrastructure/demo-logs/teacher-flow.log`
 
 ## Status
-Calibration flow is active: session startup generates personalized calibration questions through the local LLM, with deterministic fallback questions if the model output is unusable.
-Tuning roadmap generation is active: calibration answers are combined with fast DuckDuckGo result cards, external resources are embedded and stored in Elasticsearch, and the local LLM produces the roadmap with fallback logic if needed.
-Learning phase is active: each concept exposes resources + exercises, grading requests structured JSON from the local LLM, and heuristic grading remains only as a safety net.
-`llm-engine` is configured for HIP offload on the target RX 6600 by default (`LLM_ACCELERATION_MODE=gpu`, `LLM_GPU_LAYERS=32`). CPU fallback is a one-line `.env` change: set `LLM_ACCELERATION_MODE=cpu` and restart the stack.
+Calibration flow is active: session startup generates personalized calibration questions through the local LLM and fails explicitly if model output is unusable.
+Tuning roadmap generation is active: calibration answers are combined with fast DuckDuckGo result cards, external resources are embedded and stored in Elasticsearch, and the local LLM produces the roadmap in strict mode.
+Learning phase is active: each concept exposes resources + exercises, and grading requires structured JSON from the local LLM instead of local heuristic scoring.
+`llm-engine` is configured for HIP offload on the target RX 6600 by default (`LLM_ACCELERATION_MODE=gpu`, `LLM_GPU_LAYERS=32`). CPU mode is a one-line `.env` change: set `LLM_ACCELERATION_MODE=cpu` and restart the stack.
 The stack is still a scaffolded project, but the end-to-end learning path now exercises the intended containers instead of placeholder-only logic. Progress remains tracked in `rollout.md`.
 
 ## Prerequisites

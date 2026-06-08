@@ -1,4 +1,8 @@
-from pydantic_settings import BaseSettings
+from __future__ import annotations
+
+from functools import lru_cache
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -26,22 +30,25 @@ class Settings(BaseSettings):
     lab_output_root: str | None = None
     lab_auto_write: bool = False
 
+    model_config = SettingsConfigDict(
+        env_prefix="RAG_",
+        env_file=".env",
+        case_sensitive=False,
+    )
+
     @property
     def indices(self) -> dict[str, str]:
         return {
-            'user_profiles': self.index_user_profiles,
-            'knowledge_snapshots': self.index_knowledge_snapshots,
-            'learning_resources': self.index_learning_resources,
-            'dependency_graph': self.index_dependency_graph,
-            'session_interactions': self.index_session_interactions,
-            'sessions': self.index_sessions,
+            "user_profiles": self.index_user_profiles,
+            "knowledge_snapshots": self.index_knowledge_snapshots,
+            "learning_resources": self.index_learning_resources,
+            "dependency_graph": self.index_dependency_graph,
+            "session_interactions": self.index_session_interactions,
+            "sessions": self.index_sessions,
         }
 
-    class Config:
-        env_prefix = "RAG_"
-        env_file = ".env"
-        case_sensitive = False
 
-
+@lru_cache()
 def get_settings() -> Settings:
     return Settings()
+

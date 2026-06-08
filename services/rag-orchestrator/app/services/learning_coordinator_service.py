@@ -2,26 +2,26 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from textwrap import dedent
-from typing import Any, Dict, List
+from typing import Any
 
 
 @dataclass
-class LearningCoordinator:
-    plan: List[Dict[str, Any]]
+class LearningCoordinatorService:
+    plan: list[dict[str, Any]]
     index: int
 
-    def current_node(self) -> Dict[str, Any]:
+    def current_node(self) -> dict[str, Any]:
         return self.plan[self.index]
 
     def build_overview(self) -> str:
-        node = self.current_node()
+        current_node = self.current_node()
         resources = "\n".join(
-            f"  - [{item.get('title')} - {item.get('type')}]({item.get('url')})"
-            for item in node.get("resources", [])
+            f"  - [{resource.get('title')} - {resource.get('type')}]({resource.get('url')})"
+            for resource in current_node.get("resources", [])
         ) or "  - No resources registered yet."
 
         exercise_prompt = dedent(
-            node.get(
+            current_node.get(
                 "exercise",
                 "Summarize what you learned from the resources above and outline a mini-experiment you could run to validate the concept.",
             )
@@ -29,9 +29,9 @@ class LearningCoordinator:
 
         return dedent(
             f"""
-            **Concept:** {node.get('concept_name')}
-            **Summary:** {node.get('summary')}
-            **Why it matters:** Focus on how this unlocks later topics: {', '.join(node.get('prerequisites', []) or ['none'])}.
+            **Concept:** {current_node.get('concept_name')}
+            **Summary:** {current_node.get('summary')}
+            **Why it matters:** Focus on how this unlocks later topics: {', '.join(current_node.get('prerequisites', []) or ['none'])}.
 
             **Resources to review:**
             {resources}

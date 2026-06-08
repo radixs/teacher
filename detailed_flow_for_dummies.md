@@ -39,12 +39,12 @@ These terms appear many times in the rest of the document. Each term has two exp
 ### Calibration
 
 - Library picture: before teaching starts, the library asks a few warm-up questions to learn what the visitor already knows.
-- Technical meaning: this is the first phase of the session. The current code asks the local LLM to generate personalized calibration questions from the learner goal and profile, then falls back to a safe default question set if the model output is unusable.
+- Technical meaning: this is the first phase of the session. The current code asks the local LLM to generate personalized calibration questions from the learner goal and profile, and session creation fails explicitly if the model output is unusable.
 
 ### Tuning Roadmap
 
 - Library picture: after calibration, the librarians draw a learning map: first shelf A, then shelf B, then shelf C, because some topics unlock later topics.
-- Technical meaning: this is the ordered learning plan. The current code combines calibration answers, DuckDuckGo search results, and the local LLM to generate the roadmap, with a deterministic adaptive seed curriculum used only as fallback.
+- Technical meaning: this is the ordered learning plan. The current code combines calibration answers, DuckDuckGo search results, and the local LLM to generate the roadmap, and the request fails explicitly if the returned plan is unusable.
 
 ### Context Window
 
@@ -54,7 +54,7 @@ These terms appear many times in the rest of the document. Each term has two exp
 ### Grading Profile
 
 - Library picture: the librarians use a scoring sheet so every exercise is judged by the same rules instead of mood.
-- Technical meaning: `services/rag-orchestrator/config/grading_profiles.yaml` defines the rubric, threshold, and feedback rules used by `ExerciseGrader`.
+- Technical meaning: `services/rag-orchestrator/config/grading_profiles.yaml` defines the rubric, threshold, and feedback rules used by `ExerciseGraderService`.
 
 ### HIP Acceleration
 
@@ -70,11 +70,11 @@ These terms appear many times in the rest of the document. Each term has two exp
 
 This project still has scaffolded areas, but the previously missing runtime pieces in the main learning path are now active.
 
-- Calibration is real and now LLM-driven first, with fallback default questions if the model output is invalid.
+- Calibration is real and now strictly LLM-driven; invalid model output fails session creation instead of silently degrading.
 - Tuning roadmap generation is real and now uses adaptive retrieval: `search-agent` gathers public resources, `embedding-worker` embeds them, Elasticsearch stores them, and `llm-engine` turns that context into a roadmap.
 - Learning phase and grading loop are real.
-- LLM-based grading now uses the model's chat-completions path first and asks for strict JSON. The heuristic fallback remains only as a safety net when the model response is empty or malformed.
-- `search-agent` is now part of the main tuning flow in `app/api/routes/sessions.py`.
+- LLM-based grading uses the model's chat-completions path and asks for strict JSON. Invalid model output now fails the request instead of triggering local scoring.
+- `search-agent` is now part of the main tuning flow coordinated by `app/services/resource_discovery_service.py` and `app/services/tuning_workflow_service.py`.
 - Elasticsearch vector-capable indices `user_profiles` and `learning_resources` are now written on the hot path, not just provisioned.
 - Kibana is still only a human inspection screen. That simply means the app does not call Kibana as part of a learner session. A developer or presenter opens Kibana manually in the browser to inspect what Elasticsearch contains.
 
@@ -225,8 +225,10 @@ If frontend is the welcome desk and backend is the gatekeeper, `rag-orchestrator
 #### Technical responsibility
 
 - FastAPI application under `/v1`.
-- Owns the session state machine.
-- Persists and restores sessions from Elasticsearch.
+- Uses a thin controller layer for HTTP request and response handling.
+- Uses `SessionWorkflowService` as the main application-service layer for session use-cases.
+- Uses `SessionManagerService` for in-memory session mutation and phase transitions.
+- Persists and restores sessions from Elasticsearch through `SessionStore` and `LearningMemoryRepository`.
 - Calls embedding service, search service, and LLM service.
 - Generates calibration snapshots, roadmap transitions, learning prompts, and grading actions.
 
@@ -245,29 +247,37 @@ If frontend is the welcome desk and backend is the gatekeeper, `rag-orchestrator
 - `services/rag-orchestrator/Dockerfile` - Builds the FastAPI orchestration service image. It packages the code that owns the real learning workflow.
 - `services/rag-orchestrator/entrypoint.sh` - Starts the FastAPI server with configured host and port. It is the runtime launch point for the orchestrator container.
 - `services/rag-orchestrator/requirements.txt` - Declares Python dependencies such as FastAPI and integration clients. It defines what the orchestrator needs to run its state machine.
-- `services/rag-orchestrator/app/main.py` - Creates the FastAPI app, registers startup/shutdown hooks, and attaches routers. It is the service bootstrap point for orchestrator lifecycle and preload behavior.
-- `services/rag-orchestrator/app/core/config.py` - Reads and exposes environment-backed service settings. It controls URLs, index names, and feature-level runtime behavior.
-- `services/rag-orchestrator/app/core/dependencies.py` - Defines FastAPI dependency providers. It wires route handlers to shared clients and services.
+- `services/rag-orchestrator/app/main.py` - Creates the FastAPI app, attaches the lifespan bootstrap, and mounts the session router. It is the service entry point.
+- `services/rag-orchestrator/app/core/application_bootstrap.py` - Owns startup hydration and shutdown cleanup. It is the lifecycle boundary around persisted-session preload and downstream client closing.
+- `services/rag-orchestrator/app/core/service_container.py` - Defines FastAPI dependency providers. It is the service-container-like wiring layer that assembles routers, workflows, repositories, and shared clients.
+- `services/rag-orchestrator/app/core/config/` - Reads and exposes environment-backed service settings plus grading/calibration/tuning config objects.
 - `services/rag-orchestrator/app/core/flow_logger.py` - Emits orchestrator flow logs and mirrors them into the browser event stream. It is the observability hook around the central workflow engine.
-- `services/rag-orchestrator/app/models/api.py` - Defines Pydantic API contracts for incoming and outgoing HTTP payloads. It protects the shape of the orchestrator's public interface.
-- `services/rag-orchestrator/app/models/session.py` - Defines the in-memory and persisted session structures. It is the data model underneath every phase transition.
-- `services/rag-orchestrator/app/api/routes/sessions.py` - Defines the core `/v1/sessions` endpoints and phase transitions. This is the single hottest code path in the whole learning flow.
-- `services/rag-orchestrator/app/services/session_manager.py` - Mutates session state in memory across calibration, tuning, and learning. It is the phase-transition engine for a single learner session.
-- `services/rag-orchestrator/app/services/calibration.py` - Generates calibration questions and lightweight knowledge snapshots. It owns the warm-up and learner-profiling stage.
-- `services/rag-orchestrator/app/services/tuning.py` - Builds search queries and roadmap structures from calibration answers and retrieved resources. It owns the bridge from learner profile to learning plan.
-- `services/rag-orchestrator/app/services/learning.py` - Builds concept overviews, exercises, and next-step learner messages. It shapes the active teaching phase.
-- `services/rag-orchestrator/app/services/grading.py` - Builds grading prompts, parses model JSON, and applies heuristic fallback. It controls pass/retry decisions during learning.
+- `services/rag-orchestrator/app/dto/` - Defines one-file-per-class request and response DTOs for the public HTTP interface.
+- `services/rag-orchestrator/app/models/message_model.py` and `services/rag-orchestrator/app/models/session_model.py` - Define the internal message and session structures used across phase transitions and persistence.
+- `services/rag-orchestrator/app/api/routes/sessions_router.py` - Defines the core `/v1/sessions` endpoints. It is the thin HTTP router that validates payloads, logs API boundaries, delegates to the workflow layer, and translates domain errors into HTTP responses.
+- `services/rag-orchestrator/app/mappers/session_response_mapper.py` - Converts internal session and message models into response DTOs. It keeps HTTP response shaping separate from business logic.
+- `services/rag-orchestrator/app/services/user_workflow_service.py` - Orchestrates the top-level session use-cases. It restores sessions, dispatches by phase, and finalizes assistant turns.
+- `services/rag-orchestrator/app/services/session_manager_service.py` - Mutates session state in memory across calibration, tuning, and learning. It is the phase-transition engine for a single learner session.
+- `services/rag-orchestrator/app/services/calibration_planner_service.py` - Generates calibration questions and calibration snapshot data.
+- `services/rag-orchestrator/app/services/calibration_workflow_service.py` - Owns calibration answer handling and next-question vs tuning-transition decisions.
+- `services/rag-orchestrator/app/services/tuning_program_generator_service.py` - Builds search queries and roadmap structures from calibration answers and retrieved resources.
+- `services/rag-orchestrator/app/services/tuning_workflow_service.py` - Owns the calibration-to-learning transition.
+- `services/rag-orchestrator/app/services/learning_coordinator_service.py` - Reads the current roadmap node and formats concept overviews.
+- `services/rag-orchestrator/app/services/learning_workflow_service.py` - Owns learning answer evaluation and next-turn response construction.
+- `services/rag-orchestrator/app/services/exercise_grader_service.py` - Builds grading prompts and parses strict model JSON. It controls pass/retry decisions during learning.
 - `services/rag-orchestrator/config/grading_profiles.yaml` - Stores grading rubrics, thresholds, and expected feedback structure. It is the main configuration source for evaluation behavior.
-- `services/rag-orchestrator/app/services/lab_primer.py` - Renders `/lab` output from templates. It owns the practice-kit branch outside the normal lesson answer path.
+- `services/rag-orchestrator/app/services/lab_primer_service.py` - Renders `/lab` output from templates. It owns the practice-kit branch outside the normal lesson answer path.
 - `services/rag-orchestrator/lab_templates/README.md.tpl` - Template for the generated lab README. It explains the exercise package returned by `/lab`.
 - `services/rag-orchestrator/lab_templates/docker-compose.yml.tpl` - Template for the generated lab container setup. It gives learners a runnable environment recipe.
 - `services/rag-orchestrator/lab_templates/Makefile.tpl` - Template for the generated lab helper commands. It turns the lab package into a more guided operator flow.
 - `services/rag-orchestrator/lab_templates/notes.md.tpl` - Template for generated study or exercise notes. It rounds out the `/lab` package with human-readable guidance.
-- `services/rag-orchestrator/app/services/session_store.py` - Saves and restores full session documents from Elasticsearch. It gives the orchestrator stateless process resilience across visits and restarts.
-- `services/rag-orchestrator/app/clients/search.py` - Calls `search-agent` for external resources. It is the orchestrator's web-retrieval connector during roadmap generation.
-- `services/rag-orchestrator/app/clients/embedding.py` - Calls `embedding-worker` over HTTP. It is the orchestrator-to-vector-service bridge.
-- `services/rag-orchestrator/app/clients/llm.py` - Calls `llm-engine` using chat-completions first with fallback behavior. It is the orchestrator's text-generation and grading gateway.
-- `services/rag-orchestrator/app/clients/elasticsearch.py` - Encapsulates reads and writes to Elasticsearch indices. It is the persistence adapter for sessions, interactions, snapshots, graph nodes, resources, and profiles.
+- `services/rag-orchestrator/app/repositories/session_repository.py` - Saves and restores full session documents from Elasticsearch. It gives the orchestrator stateless process resilience across visits and restarts.
+- `services/rag-orchestrator/app/repositories/learning_memory_repository.py` - Hides the concrete Elasticsearch index names used for interactions, snapshots, dependency nodes, resources, and user profiles. It keeps persistence details out of the workflow layer.
+- `services/rag-orchestrator/app/services/resource_discovery_service.py` - Calls `search-agent`, normalizes search results, computes resource embeddings, and persists learning resources. It owns the orchestrator-side web-search behavior above the raw HTTP client.
+- `services/rag-orchestrator/app/clients/search_client.py` - Calls `search-agent` for external resources. It is the orchestrator's web-retrieval connector during roadmap generation.
+- `services/rag-orchestrator/app/clients/embedding_client.py` - Calls `embedding-worker` over HTTP. It is the orchestrator-to-vector-service bridge.
+- `services/rag-orchestrator/app/clients/llm_client.py` - Calls `llm-engine` through strict chat-completions behavior. It is the orchestrator's text-generation and grading gateway.
+- `services/rag-orchestrator/app/clients/elasticsearch_client.py` - Encapsulates reads and writes to Elasticsearch indices. It is the persistence adapter for sessions, interactions, snapshots, graph nodes, resources, and profiles.
 - `services/rag-orchestrator/app/tests/test_sessions.py` - Exercises the session endpoints and major phase transitions under pytest. It validates the orchestrator hot path in automated checks.
 - `services/rag-orchestrator/app/__init__.py` - Marks the top-level app package. It supports Python module loading for the orchestrator codebase.
 - `services/rag-orchestrator/app/api/__init__.py` - Marks the API package. It organizes HTTP-facing code under a clear namespace.
@@ -275,6 +285,7 @@ If frontend is the welcome desk and backend is the gatekeeper, `rag-orchestrator
 - `services/rag-orchestrator/app/clients/__init__.py` - Marks the downstream client package. It groups adapters that call other services.
 - `services/rag-orchestrator/app/core/__init__.py` - Marks the core package. It keeps low-level app wiring grouped separately from business logic.
 - `services/rag-orchestrator/app/models/__init__.py` - Marks the models package. It groups request, response, and session data structures.
+- `services/rag-orchestrator/app/repositories/__init__.py` - Marks the repository package. It groups persistence-facing adapters that sit between business logic and Elasticsearch writes.
 - `services/rag-orchestrator/app/services/__init__.py` - Marks the service-layer package. It keeps business logic modules grouped together.
 - `services/rag-orchestrator/app/tests/__init__.py` - Marks the test package. It supports Python test discovery for the orchestrator suite.
 
@@ -296,7 +307,7 @@ Louis does not manage the whole library. Louis only answers when asked.
 #### Handoff behavior
 
 - Receives HTTP completion requests from `rag-orchestrator` for calibration, tuning, and grading work.
-- Returns generated text or fails, which triggers fallback behavior upstream.
+- Returns generated text or fails, which now stops the active orchestrator request explicitly.
 
 #### Files and configs
 
@@ -485,8 +496,10 @@ Before visitors arrive, the filing cabinets are labeled and empty drawers are cr
 4. Axios in `src/services/api.js` calls `GET /api/v1/sessions/{sessionId}`.
 5. Laravel route `routes/api.php` maps to `ChatSessionController::show`.
 6. `RagClient::fetchSession()` calls `GET /v1/sessions/{sessionId}` on `rag-orchestrator`.
-7. FastAPI route `get_session()` returns the in-memory session, or restores it from Elasticsearch through `SessionStore.get()` if needed.
-8. Response travels back to Vuex and updates UI state.
+7. FastAPI route `get_session()` in `sessions_router.py` is a thin controller and delegates to `UserWorkflowService.get_session()`.
+8. `UserWorkflowService.get_session()` returns the in-memory session, or restores it from Elasticsearch through `SessionRepository.get()` if needed.
+9. `session_response_mapper.py` converts the internal session object into the public response DTO.
+10. Response travels back to Vuex and updates UI state.
 
 #### Library story
 
@@ -504,19 +517,22 @@ When the visitor walks back in, the welcome desk checks whether the visitor alre
    - `goal` required string
    - `profile` optional array
 6. `RagClient::startSession()` forwards `POST /v1/sessions`.
-7. FastAPI `start_session()`:
-   - calls `SessionManager.create_session()`
-   - creates calibration queue via `CalibrationPlanner.questions()`
-   - calls `SessionManager.next_calibration_question()`
+7. FastAPI `post_session()` is a thin controller and delegates to `UserWorkflowService.start_new_session()`.
+8. `UserWorkflowService.start_new_session()`:
+   - creates calibration queue via `CalibrationPlannerService.questions()`
+   - calls `SessionManagerService.create_session()`
+   - calls `SessionManagerService.next_calibration_question()`
    - appends assistant message with the first calibration question
+   - stores learner profile in Elasticsearch through `LearningMemoryRepository`
    - stores assistant interaction in Elasticsearch index `session_interactions`
    - stores full session document in Elasticsearch index `sessions`
-8. Response returns to Laravel, then to Vuex, which stores:
+9. `session_response_mapper.py` converts the internal session object into the public response DTO.
+10. Response returns to Laravel, then to Vuex, which stores:
    - `sessionId`
    - `messages`
    - `phase`
    - `sessionHistory`
-9. Frontend writes session history and active session id to localStorage.
+11. Frontend writes session history and active session id to localStorage.
 
 #### Library story
 
@@ -533,21 +549,24 @@ The visitor tells the front desk, "I want to learn X." The desk clerk writes the
 5. Laravel `ChatSessionController::message()` validates:
    - `message` required string
    - `metadata` optional array
-6. `RagClient::sendMessage()` forwards to FastAPI `send_message()`.
-7. `send_message()`:
+6. `RagClient::sendMessage()` forwards to FastAPI `post_message()`.
+7. `post_message()` is a thin controller and delegates to `UserWorkflowService.send_message()`.
+8. `UserWorkflowService.send_message()`:
    - restores session from Elasticsearch if not already in memory
    - appends user message to transcript
    - requests embedding from `embedding-worker`
-   - stores user interaction in `session_interactions`
-   - records answer in `calibration_history`
-   - synthesizes a simple snapshot via `CalibrationPlanner.synthesize_snapshot()`
-   - stores snapshot in `knowledge_snapshots`
-   - asks `SessionManager.next_calibration_question()`
-   - appends the next assistant question
+   - stores user interaction in `session_interactions` through `LearningMemoryRepository`
+   - delegates the calibration-phase branch to `CalibrationWorkflowService.handle_answer()`
+   - `CalibrationWorkflowService` records answer in `calibration_history`
+   - `CalibrationWorkflowService` synthesizes a simple snapshot via `CalibrationPlannerService.synthesize_snapshot()`
+   - `CalibrationWorkflowService` stores snapshot in `knowledge_snapshots`
+   - `CalibrationWorkflowService` asks `SessionManagerService.next_calibration_question()`
+   - `CalibrationWorkflowService` either appends the next assistant question or hands off to tuning
    - stores assistant interaction
    - persists updated session in `sessions`
-8. Response returns to Vuex.
-9. Vuex appends the assistant message and updates summary state.
+9. `session_response_mapper.py` converts the workflow result into the public response DTO.
+10. Response returns to Vuex.
+11. Vuex appends the assistant message and updates summary state.
 
 #### Library story
 
@@ -558,17 +577,18 @@ The visitor answers a warm-up question. Emily makes a meaning card for the answe
 #### Technical flow
 
 1. The final calibration answer arrives through the same `send_message()` endpoint.
-2. `SessionManager.next_calibration_question()` returns `None`.
-3. `TuningProgramGenerator.build_search_query()` derives a search query from the goal and calibration answers.
-4. `SearchClient.search(..., enrich=False)` calls `search-agent`.
-5. Returned external resources are embedded and written into Elasticsearch `learning_resources`.
-6. `TuningProgramGenerator.generate()` sends calibration answers plus retrieved resources to `llm-engine` and expects roadmap JSON back.
-7. `SessionManager.set_tuning_plan()` stores the roadmap and sets phase to `tuning`.
-8. `SessionManager.begin_learning()` immediately sets phase to `learning`.
-9. Each roadmap node is persisted into Elasticsearch `dependency_graph` through `store_dependency_node()`, and concept resources are also persisted to `learning_resources`.
-10. `LearningCoordinator.build_overview()` creates the first learning concept summary, resources, and exercise.
-11. Assistant message is appended with stage `learning_intro`.
-12. Session is persisted to Elasticsearch.
+2. `CalibrationWorkflowService.handle_answer()` discovers that `SessionManagerService.next_calibration_question()` returns `None`.
+3. `TuningWorkflowService.complete_calibration()` starts the calibration-to-learning bridge.
+4. `TuningProgramGeneratorService.build_search_query()` derives a search query from the goal and calibration answers.
+5. `ResourceDiscoveryService.discover_resources()` calls `SearchClient.search(..., enrich=False)`, which in turn calls `search-agent`.
+6. `ResourceDiscoveryService` normalizes the returned external resources, computes embeddings, and writes them into Elasticsearch `learning_resources`.
+7. `TuningProgramGeneratorService.generate()` sends calibration answers plus retrieved resources to `llm-engine` and expects roadmap JSON back.
+8. `SessionManagerService.set_tuning_plan()` stores the roadmap and sets phase to `tuning`.
+9. `SessionManagerService.begin_learning()` immediately sets phase to `learning`.
+10. Each roadmap node is persisted into Elasticsearch `dependency_graph`, and concept resources are also persisted to `learning_resources`.
+11. `LearningCoordinatorService.build_overview()` creates the first learning concept summary, resources, and exercise.
+12. Assistant message is appended with stage `learning_intro`.
+13. Session is persisted to Elasticsearch.
 
 #### Library story
 
@@ -579,21 +599,21 @@ When the warm-up questions are finished, the head librarian first asks the outsi
 #### Technical flow
 
 1. Learner submits an answer while `session.phase == "learning"`.
-2. `send_message()` identifies current concept via `LearningCoordinator.current_node()`.
-3. `ExerciseGrader.evaluate()` builds a grading prompt from:
+2. `LearningWorkflowService.handle_answer()` identifies current concept via `LearningCoordinatorService.current_node()`.
+3. `ExerciseGraderService.evaluate()` builds a grading prompt from:
    - concept metadata
    - resources
    - exercise text
    - rubric from `grading_profiles.yaml`
    - learner answer
 4. `LlmClient.generate()` calls `llm-engine`.
-5. If the response contains parseable JSON, grading result is used. Otherwise `ExerciseGrader._heuristic_fallback()` computes score locally.
+5. If the response contains valid JSON, grading result is used. Otherwise the request fails explicitly with `ExerciseGradingError`.
 6. If `passed == true`:
-   - `SessionManager.record_learning_outcome()` stores concept status `complete`
+   - `SessionManagerService.record_learning_outcome()` stores concept status `complete`
    - knowledge snapshot is stored in `knowledge_snapshots`
-   - `SessionManager.advance_concept()` moves to the next concept
+   - `SessionManagerService.advance_concept()` moves to the next concept
    - next concept overview is generated unless roadmap is finished
-7. Assistant response is stored in `session_interactions`.
+7. Assistant response is stored in `session_interactions` through `LearningMemoryRepository`.
 8. Updated session is saved in `sessions`.
 
 #### Library story
@@ -605,8 +625,8 @@ The visitor finishes a lesson and hands in homework. Louis reviews it using the 
 #### Technical flow
 
 1. Same grading setup as the pass path.
-2. If `passed == false`:
-   - `SessionManager.record_learning_outcome()` stores status `needs_revision`
+2. `LearningWorkflowService.handle_answer()` keeps the learner on the same concept when `passed == false`:
+   - `SessionManagerService.record_learning_outcome()` stores status `needs_revision`
    - snapshot is stored, usually without embedding for failed answer persistence
    - current concept index stays the same
    - assistant message uses stage `learning_retry`
@@ -621,10 +641,10 @@ The homework is not wrong forever; it is just not ready yet. Louis writes feedba
 #### Technical flow
 
 1. Final concept answer passes grading.
-2. `SessionManager.advance_concept()` increments beyond last roadmap node.
+2. `SessionManagerService.advance_concept()` increments beyond last roadmap node.
 3. Session phase becomes `learning_complete`.
 4. Assistant returns completion message.
-5. Subsequent messages go through the `else` branch in `send_message()` and receive:
+5. Subsequent messages go through the completion branch in `UserWorkflowService.send_message()` and receive:
    - "Learning program already completed. Use /no more to wrap up or ask for a recap."
 
 Important note:
@@ -642,8 +662,9 @@ The visitor has finished every planned shelf. The library marks the folder compl
 1. Browser stores `sessionHistory` and active session id in localStorage.
 2. Later, the user returns.
 3. `hydrateFromStorage()` tries `loadSession()`.
-4. Backend and RAG fetch the session from memory or Elasticsearch.
-5. UI shows:
+4. Backend controller and RAG controller delegate to their service layers.
+5. `SessionWorkflowService.get_session()` fetches the session from memory or Elasticsearch.
+6. UI shows:
    - active goal
    - current phase
    - previous transcript
@@ -657,12 +678,12 @@ The visitor leaves the library and comes back another day. The welcome desk reco
 #### Technical flow
 
 1. User sends a message beginning with `/lab`.
-2. `send_message()` detects the command before normal grading flow.
+2. `UserWorkflowService.send_message()` detects the command before normal grading flow.
 3. Requested concept is resolved from:
    - command argument if present
    - current learning concept if already learning
    - session goal otherwise
-4. `LabPrimer.generate()` renders:
+4. `LabPrimerService.generate()` renders:
    - `README.md`
    - `docker-compose.yml`
    - `Makefile`
@@ -679,19 +700,19 @@ The visitor asks, "Can I get a mini practice kit?" The head librarian assembles 
 
 #### Technical flow
 
-1. `ExerciseGrader` builds a prompt with strict JSON output instructions.
-2. `LlmClient.generate()` first sends an OpenAI-compatible `POST /v1/chat/completions` request to `llm-engine`, with legacy `/completion` fallback for compatibility.
+1. `ExerciseGraderService` builds a prompt with strict JSON output instructions.
+2. `LlmClient.generate()` sends an OpenAI-compatible `POST /v1/chat/completions` request to `llm-engine`.
 3. If the model returns valid JSON, `_parse_result()` extracts:
    - `passed`
    - `score`
    - `feedback`
    - `highlights`
-4. If parsing or transport fails, heuristic fallback scores by answer length and a few keywords.
+4. If parsing or transport fails, the request fails explicitly instead of using local scoring.
 
 Current implementation truth:
 
 - The normal path is now truly model-backed.
-- The heuristic path remains as a resilience guard, not as the intended primary grader.
+- Invalid model output now stops the learning request instead of being repaired silently.
 
 #### Library story
 
@@ -797,25 +818,26 @@ This section intentionally drops the child story and uses only professional lang
 7. Axios `POST /api/v1/sessions` reaches Laravel route in `services/backend/app/routes/api.php`.
 8. `App\Http\Controllers\Api\ChatSessionController::start()` validates request.
 9. `App\Services\Rag\RagClient::startSession()` forwards payload to `rag-orchestrator`.
-10. `services/rag-orchestrator/app/api/routes/sessions.py::start_session()` creates session through `SessionManager`.
-11. `CalibrationPlanner.questions()` asks `llm-engine` for a personalized question list and falls back to defaults only if needed.
-12. `SessionManager.next_calibration_question()` selects first question.
-13. Learner profile text is embedded and stored in Elasticsearch `user_profiles`.
+10. `services/rag-orchestrator/app/api/routes/sessions_router.py::post_session()` acts as a thin controller and delegates to `UserWorkflowService.start_new_session()`.
+11. `CalibrationPlannerService.questions()` asks `llm-engine` for a personalized question list and fails explicitly if the model output is unusable.
+12. `SessionManagerService.create_session()` creates the aggregate and `SessionManagerService.next_calibration_question()` selects the first question.
+13. Learner profile text is embedded and stored in Elasticsearch `user_profiles` through `LearningMemoryRepository`.
 14. First assistant message is persisted to `session_interactions`.
 15. Full session snapshot is persisted to `sessions`.
-16. Response returns to frontend, which stores `sessionId`, `phase`, transcript, and local session history.
+16. `session_response_mapper.py` shapes the public response DTO.
+17. Response returns to frontend, which stores `sessionId`, `phase`, transcript, and local session history.
 
 ### Session 1: Calibration Progress
 
 1. User submits answer through `ChatInput`.
 2. Vuex `sendMessage` optimistically appends the user message locally.
 3. Backend `ChatSessionController::message()` validates request and forwards it.
-4. FastAPI `send_message()` appends user message to transcript.
+4. FastAPI `post_message()` is a thin controller and delegates to `UserWorkflowService.send_message()`.
 5. `EmbeddingClient.embed()` calls `embedding-worker /embed`.
-6. User interaction with embedding is stored in `session_interactions`.
-7. Calibration answer is written into `calibration_history`.
-8. Snapshot is synthesized and persisted in `knowledge_snapshots`.
-9. Next calibration question is generated from the queue and returned.
+6. User interaction with embedding is stored in `session_interactions` through `LearningMemoryRepository`.
+7. `CalibrationWorkflowService.handle_answer()` writes the calibration answer into `calibration_history`.
+8. `CalibrationWorkflowService` synthesizes and persists the calibration snapshot in `knowledge_snapshots`.
+9. `CalibrationWorkflowService` generates the next question from the queue and returns it.
 10. Session is saved again in `sessions`.
 
 ### Session 2: User Returns Later
@@ -823,41 +845,42 @@ This section intentionally drops the child story and uses only professional lang
 1. Browser still has `teacher.activeSessionId` and `teacher.sessionHistory`.
 2. On page load, Vuex `hydrateFromStorage()` dispatches `loadSession`.
 3. Backend `show()` endpoint proxies to `rag-orchestrator`.
-4. If the session is not currently in memory, `SessionStore.get()` reads it from Elasticsearch.
-5. The user sees the existing transcript and current phase.
+4. FastAPI `get_session()` delegates to `UserWorkflowService.get_session()`.
+5. If the session is not currently in memory, `SessionRepository.get()` reads it from Elasticsearch.
+6. The user sees the existing transcript and current phase.
 
 ### Session 2: Calibration Finishes And Learning Starts
 
 1. Final calibration answer is posted.
-2. `send_message()` detects no more calibration questions.
-3. `TuningProgramGenerator.build_search_query()` creates an external search query from the goal and calibration answers.
-4. `SearchClient.search(..., enrich=False)` calls `search-agent`, which returns normalized public resources.
+2. `CalibrationWorkflowService.handle_answer()` detects no more calibration questions and hands off to `TuningWorkflowService.complete_calibration()`.
+3. `TuningWorkflowService` creates an external search query from the goal and calibration answers.
+4. `ResourceDiscoveryService.discover_resources()` calls `search-agent` through `SearchClient.search(..., enrich=False)` and normalizes the returned public resources.
 5. Retrieved resources are embedded and stored in `learning_resources`.
-6. `TuningProgramGenerator.generate()` asks `llm-engine` for a structured roadmap using calibration answers plus retrieved resources.
-7. `SessionManager.set_tuning_plan()` stores roadmap.
-8. `SessionManager.begin_learning()` moves phase to `learning`.
+6. `TuningProgramGeneratorService.generate()` asks `llm-engine` for a structured roadmap using calibration answers plus retrieved resources.
+7. `SessionManagerService.set_tuning_plan()` stores roadmap.
+8. `SessionManagerService.begin_learning()` moves phase to `learning`.
 9. Each roadmap node is written to `dependency_graph`, and concept resources are also stored in `learning_resources`.
-10. `LearningCoordinator.build_overview()` creates the first concept message.
+10. `LearningCoordinatorService.build_overview()` creates the first concept message.
 11. Assistant returns concept summary, resources, and exercise.
 
 ### Session 3: First Learning Exercise
 
 1. User studies resources and submits exercise answer.
-2. `send_message()` enters the `session.phase == "learning"` branch.
-3. Current concept is selected by `LearningCoordinator.current_node()`.
-4. `ExerciseGrader.evaluate()` builds prompt using concept and rubric.
-5. `LlmClient.generate()` calls `llm-engine` chat-completions first, with legacy completion fallback for compatibility.
-6. Result is parsed if valid JSON; otherwise heuristic fallback is used as a safety net.
-7. Snapshot of learning outcome is stored in `knowledge_snapshots`.
+2. `UserWorkflowService.send_message()` enters the `session.phase == "learning"` branch.
+3. `LearningWorkflowService.handle_answer()` selects the current concept through `LearningCoordinatorService.current_node()`.
+4. `ExerciseGraderService.evaluate()` builds prompt using concept and rubric.
+5. `LlmClient.generate()` calls `llm-engine` through strict chat-completions behavior.
+6. Result is parsed only if valid JSON; otherwise the request fails explicitly.
+7. `LearningWorkflowService` stores the snapshot of learning outcome in `knowledge_snapshots`.
 8. If passed, concept advances; otherwise retry feedback is returned.
-9. Assistant response is stored in `session_interactions`.
+9. Assistant response is stored in `session_interactions` through `LearningMemoryRepository`.
 10. Session is persisted to `sessions`.
 
 ### Session 3: Optional Lab Request
 
 1. User sends `/lab vector search`.
-2. `send_message()` branches before normal learning evaluation.
-3. `LabPrimer.generate()` renders lab files from templates.
+2. `UserWorkflowService.send_message()` branches before normal learning evaluation.
+3. `LabPrimerService.generate()` renders lab files from templates.
 4. Assistant returns fenced file content.
 5. Session is persisted normally.
 
@@ -880,7 +903,7 @@ These choices are not random. They exist to fit the target machine and the curre
 - Laravel in front of FastAPI: keeps a PHP-native public API boundary while isolating RAG logic in Python.
 - DuckDuckGo HTML search agent: avoids paid APIs and aligns with the project's operating constraints.
 - Session persistence in Elasticsearch: supports stateless container restarts and multi-session resumption.
-- Static curriculum roadmap for now: simpler and safer while the surrounding RAG and grading pipeline is still being validated.
+- LLM-generated roadmap in strict mode: the normal path is retrieval plus LLM planning, and invalid roadmap output now fails explicitly.
 
 ## 8. Single Demo Log: What Was Added And How To Use It
 
@@ -956,13 +979,18 @@ If you want to understand one concern quickly, start here:
 - Browser state and API calls: `services/frontend/app/src/store/index.js`
 - Session entrypoints in PHP: `services/backend/app/app/Http/Controllers/Api/ChatSessionController.php`
 - PHP to Python bridge: `services/backend/app/app/Services/Rag/RagClient.php`
-- Main workflow state machine: `services/rag-orchestrator/app/api/routes/sessions.py`
-- Session transitions: `services/rag-orchestrator/app/services/session_manager.py`
-- Grading behavior: `services/rag-orchestrator/app/services/grading.py`
-- Roadmap generation: `services/rag-orchestrator/app/services/tuning.py`
-- Learning concept rendering: `services/rag-orchestrator/app/services/learning.py`
-- Session persistence: `services/rag-orchestrator/app/services/session_store.py`
-- Elasticsearch writes: `services/rag-orchestrator/app/clients/elasticsearch.py`
+- FastAPI HTTP controller entrypoints: `services/rag-orchestrator/app/api/routes/sessions_router.py`
+- Main workflow state machine: `services/rag-orchestrator/app/services/user_workflow_service.py`
+- Calibration-phase orchestration: `services/rag-orchestrator/app/services/calibration_workflow_service.py`
+- Session transitions: `services/rag-orchestrator/app/services/session_manager_service.py`
+- API response shaping: `services/rag-orchestrator/app/mappers/session_response_mapper.py`
+- Grading behavior: `services/rag-orchestrator/app/services/exercise_grader_service.py`
+- Roadmap generation: `services/rag-orchestrator/app/services/tuning_program_generator_service.py`
+- Search-agent orchestration and resource cleanup: `services/rag-orchestrator/app/services/resource_discovery_service.py`
+- Learning concept rendering: `services/rag-orchestrator/app/services/learning_coordinator_service.py`
+- Session persistence: `services/rag-orchestrator/app/repositories/session_repository.py`
+- Learning-flow Elasticsearch writes: `services/rag-orchestrator/app/repositories/learning_memory_repository.py`
+- Low-level Elasticsearch client: `services/rag-orchestrator/app/clients/elasticsearch_client.py`
 - Embedding generation: `services/embedding-worker/app/main.py`
 - External search path: `services/search-agent/app/routes/search.py`
 - Model runtime configuration: `services/llm-engine/config.yaml`
@@ -986,7 +1014,7 @@ The most important engineering truth is that this is not "one AI service." It is
 - explicit API boundaries
 - persisted state
 - deterministic phase transitions
-- fallback behavior
+- explicit failure boundaries
 - observable logs
 - containerized runtime constraints
 

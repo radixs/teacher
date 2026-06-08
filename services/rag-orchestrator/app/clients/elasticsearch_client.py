@@ -55,17 +55,17 @@ class ElasticsearchClient:
         snapshot: Dict[str, Any],
         embedding: list[float] | None = None,
     ) -> None:
-        payload = dict(snapshot)
-        payload.update(
+        snapshot_document = dict(snapshot)
+        snapshot_document.update(
             {
                 "session_id": session_id,
                 "created_at": datetime.utcnow().isoformat(),
             }
         )
         if embedding:
-            payload["embedding"] = embedding
+            snapshot_document["embedding"] = embedding
 
-        await self._client.post(f"/{index}/_doc", json=payload)
+        await self._client.post(f"/{index}/_doc", json=snapshot_document)
         log_flow(
             "elasticsearch",
             "snapshot.stored",
@@ -73,20 +73,20 @@ class ElasticsearchClient:
             index=index,
             session_id=session_id,
             has_embedding=bool(embedding),
-            snapshot_keys=sorted(payload.keys()),
+            snapshot_keys=sorted(snapshot_document.keys()),
         )
 
     async def store_dependency_node(self, index: str, node: Dict[str, Any]) -> None:
-        payload = dict(node)
-        payload.setdefault("created_at", datetime.utcnow().isoformat())
-        await self._client.post(f"/{index}/_doc", json=payload)
+        dependency_node_document = dict(node)
+        dependency_node_document.setdefault("created_at", datetime.utcnow().isoformat())
+        await self._client.post(f"/{index}/_doc", json=dependency_node_document)
         log_flow(
             "elasticsearch",
             "dependency_node.stored",
             "RAG orchestrator stored a dependency graph node in Elasticsearch.",
             index=index,
-            concept_id=payload.get("concept_id"),
-            concept_name=payload.get("concept_name"),
+            concept_id=dependency_node_document.get("concept_id"),
+            concept_name=dependency_node_document.get("concept_name"),
         )
 
     async def store_learning_resource(
@@ -95,18 +95,18 @@ class ElasticsearchClient:
         resource: Dict[str, Any],
         embedding: list[float] | None = None,
     ) -> None:
-        payload = dict(resource)
-        payload.setdefault("created_at", datetime.utcnow().isoformat())
+        learning_resource_document = dict(resource)
+        learning_resource_document.setdefault("created_at", datetime.utcnow().isoformat())
         if embedding:
-            payload["embedding"] = embedding
-        await self._client.post(f"/{index}/_doc", json=payload)
+            learning_resource_document["embedding"] = embedding
+        await self._client.post(f"/{index}/_doc", json=learning_resource_document)
         log_flow(
             "elasticsearch",
             "learning_resource.stored",
             "RAG orchestrator stored a learning resource document in Elasticsearch.",
             index=index,
-            title=payload.get("title"),
-            url=payload.get("url"),
+            title=learning_resource_document.get("title"),
+            url=learning_resource_document.get("url"),
             has_embedding=bool(embedding),
         )
 
@@ -119,7 +119,7 @@ class ElasticsearchClient:
         knowledge_vector: list[float] | None = None,
     ) -> None:
         timestamp = datetime.utcnow().isoformat()
-        payload: Dict[str, Any] = {
+        user_profile_document: Dict[str, Any] = {
             "user_id": document_id,
             "goal": goal,
             "experience_summary": experience_summary,
@@ -127,8 +127,8 @@ class ElasticsearchClient:
             "updated_at": timestamp,
         }
         if knowledge_vector:
-            payload["knowledge_vector"] = knowledge_vector
-        await self._client.put(f"/{index}/_doc/{document_id}", json=payload)
+            user_profile_document["knowledge_vector"] = knowledge_vector
+        await self._client.put(f"/{index}/_doc/{document_id}", json=user_profile_document)
         log_flow(
             "elasticsearch",
             "user_profile.upserted",
@@ -163,7 +163,7 @@ class ElasticsearchClient:
             )
             return None
         response.raise_for_status()
-        payload = response.json()
+        document_response = response.json()
         log_flow(
             "elasticsearch",
             "document.hit",
@@ -171,15 +171,15 @@ class ElasticsearchClient:
             index=index,
             document_id=document_id,
         )
-        return payload.get("_source")
+        return document_response.get("_source")
 
     async def search(self, index: str, query: Dict[str, Any], size: int = 100) -> list[Dict[str, Any]]:
         body = {"query": query, "size": size, "sort": [{"created_at": {"order": "asc"}}]}
         response = await self._client.post(f"/{index}/_search", json=body)
         response.raise_for_status()
-        payload = response.json()
+        search_response = response.json()
         results: list[Dict[str, Any]] = []
-        for hit in payload.get("hits", {}).get("hits", []):
+        for hit in search_response.get("hits", {}).get("hits", []):
             source = hit.get("_source")
             if source:
                 results.append(source)

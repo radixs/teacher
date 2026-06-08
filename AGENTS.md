@@ -45,13 +45,23 @@
 - GPU usage: llama.cpp built with HIP; containers map `/dev/kfd` and `/dev/dri` and expect ROCm drivers. Set `HIP_VISIBLE_DEVICES=-1` to force CPU fallback.
 - GPU acceleration: prefer containerised ROCm (see README). Avoid host-level ROCm installs unless you are ready to restore Mesa/AMDGPU.
 
+## Rag-Orchestrator Code Style
+- One class per file in `services/rag-orchestrator/app` unless a file is a deliberate package helper such as `__init__.py`.
+- File names must describe responsibility explicitly: use suffixes such as `_client`, `_repository`, `_router`, `_mapper`, `_request_dto`, `_response_dto`, and `_service` where they are part of the established naming.
+- DTOs live in `app/dto/`; internal persistent/domain structures live in `app/models/`.
+- Response/document shaping belongs in `app/mappers/`, not in routers or repositories.
+- Avoid generic local names such as `payload`, `data`, `dict`, or `string` when the business meaning is known.
+- Prefer passing full `SessionModel` objects through workflow/service layers; keep id-only lookup methods narrow.
+- Do not introduce silent fallback behavior in rag-orchestrator. If LLM, embedding, search, grading, or startup prerequisites fail, raise explicit errors and surface them clearly.
+
 ## Current Skeleton Status
-- Project remains at scaffolding stage: backend/frontend/RAG services exist but most behaviour is stubbed.
-- Docker compose brings up eight services; containers start but end-to-end flows (RAG orchestration, embedding, grading) still need validation.
-- `make test` currently passes Laravel suite but rag-orchestrator pytest fails (422 due to request schema).
+- The main end-to-end learning flow is active across backend, rag-orchestrator, llm-engine, embedding-worker, search-agent, and Elasticsearch.
+- Rag-orchestrator now uses DTOs, mappers, repositories, explicit bootstrap/container wiring, and one-class-per-file service modules.
+- Strict failure behavior is enabled in rag-orchestrator: calibration generation, roadmap generation, search, embeddings, grading, and startup hydration now fail loudly instead of degrading silently.
+- `make test` currently passes across backend, rag-orchestrator, search-agent, and frontend build smoke. One known warning remains from `httpx` test-client deprecation in rag-orchestrator tests.
 
 ## Next Conversation Reminders
-- On new sessions, rebuild containers and rerun `make test` to confirm current failures.
-- Fix focus: rag-orchestrator POST `/v1/sessions` should accept plain JSON body; adjust FastAPI endpoint and tests.
-- Ensure grading config + lab primer dependencies still resolvable.
+- On new sessions, rerun `make test` first to confirm the refactor baseline is still green before starting the next implementation phase.
+- `rag-orchestrator_flows.md` is now the canonical current flow map for the Python orchestrator; prefer updating it over older narrative docs when flow behavior changes.
+- If touching rag-orchestrator tests, keep an eye on the remaining `httpx` test-client deprecation warning.
 - GPU path is containerised ROCm only (`/dev/kfd`, `/dev/dri`, user in video/render). Avoid host ROCm installs.

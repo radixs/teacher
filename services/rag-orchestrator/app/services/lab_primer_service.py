@@ -3,18 +3,22 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from textwrap import dedent
-from typing import Dict
 from string import Template
+from textwrap import dedent
 
 
 @dataclass
-class LabPrimer:
+class LabPrimerService:
     template_dir: Path
     output_root: Path | None = None
     auto_write: bool = False
 
-    def generate(self, concept_name: str, goal: str, slug: str | None = None) -> Dict[str, str]:
+    def generate(
+        self,
+        concept_name: str,
+        goal: str,
+        slug: str | None = None,
+    ) -> dict[str, str]:
         slug = slug or self._slugify(concept_name)
         variables = {
             "concept_name": concept_name,
@@ -60,14 +64,14 @@ class LabPrimer:
         files_with_summary.update(files)
         return files_with_summary
 
-    def _render_template(self, name: str, variables: Dict[str, str]) -> str:
+    def _render_template(self, name: str, variables: dict[str, str]) -> str:
         template_path = self.template_dir / name
         if not template_path.exists():
             raise FileNotFoundError(f"Lab template {name} missing at {template_path}")
         content = template_path.read_text(encoding="utf-8")
         return Template(content).safe_substitute(variables)
 
-    def _write_files(self, directory: Path, files: Dict[str, str]) -> None:
+    def _write_files(self, directory: Path, files: dict[str, str]) -> None:
         directory.mkdir(parents=True, exist_ok=True)
         for filename, content in files.items():
             target = directory / filename
@@ -77,4 +81,7 @@ class LabPrimer:
     @staticmethod
     def _slugify(value: str) -> str:
         value = value.strip().lower()
-        return "-".join(filter(None, [segment for segment in value.replace("/", " ").split()]))
+        return "-".join(
+            filter(None, [segment for segment in value.replace("/", " ").split()])
+        )
+

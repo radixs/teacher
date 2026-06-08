@@ -6,6 +6,7 @@ from typing import Any, Dict
 import httpx
 
 from ..core.flow_logger import log_flow
+from ..services.llm_generation_error import LlmGenerationError
 
 
 class LlmClient:
@@ -48,8 +49,12 @@ class LlmClient:
                 timeout=request_timeout,
             )
             response.raise_for_status()
-            data = response.json()
-            text = self._extract_chat_text(data)
+            completion_response = response.json()
+            text = self._extract_chat_text(completion_response)
+            if not text.strip():
+                raise LlmGenerationError(
+                    "LLM engine returned an empty completion response."
+                )
             log_flow(
                 "llm-engine",
                 "completion.received",
@@ -61,53 +66,21 @@ class LlmClient:
             return {
                 "text": text,
                 "endpoint": "/v1/chat/completions",
-                "raw": data,
-            }
-        except Exception as exc:
-            log_flow(
-                "llm-engine",
-                "completion.chat_failed",
-                "Chat-completions request failed, so the orchestrator is falling back to the legacy completion endpoint.",
-                prompt_length=len(rendered_prompt),
-                error=str(exc),
-            )
-        completion_payload: Dict[str, Any] = {
-            "prompt": rendered_prompt,
-            "temperature": temperature,
-            "n_predict": max_tokens,
-            "stop": ["</s>"],
-        }
-        try:
-            response = await self._client.post(
-                "/completion",
-                json=completion_payload,
-                timeout=request_timeout,
-            )
-            response.raise_for_status()
-            data = response.json()
-            text = self._extract_completion_text(data)
-            log_flow(
-                "llm-engine",
-                "completion.received",
-                "RAG orchestrator received a legacy completion response from the LLM engine.",
-                status=response.status_code,
-                endpoint="/completion",
-                response_preview=text or "",
-            )
-            return {
-                "text": text,
-                "endpoint": "/completion",
-                "raw": data,
+                "raw": completion_response,
             }
         except Exception as exc:
             log_flow(
                 "llm-engine",
                 "completion.failed",
-                "Both LLM endpoints failed, so the caller must handle the missing model output.",
+                "LLM completion request failed and the orchestrator cannot continue without model output.",
                 prompt_length=len(rendered_prompt),
                 error=str(exc),
             )
-            return {"text": "", "error": str(exc)}
+            if isinstance(exc, LlmGenerationError):
+                raise
+            raise LlmGenerationError(
+                "LLM engine failed to generate a completion."
+            ) from exc
 
     async def close(self) -> None:
         await self._client.aclose()
@@ -137,16 +110,3 @@ class LlmClient:
         first_choice = choices[0] or {}
         message = first_choice.get("message") or {}
         return message.get("content") or first_choice.get("text") or payload.get("content") or payload.get("text") or ""
-
-    @staticmethod
-    def _extract_completion_text(payload: Any) -> str:
-        if isinstance(payload, dict):
-            if "content" in payload:
-                return payload.get("content") or ""
-            if "text" in payload:
-                return payload.get("text") or ""
-            choices = payload.get("choices") or []
-            if choices:
-                first_choice = choices[0] or {}
-                return first_choice.get("text") or ""
-        return str(payload)

@@ -6,6 +6,7 @@ from typing import Any, Dict
 import httpx
 
 from ..core.flow_logger import log_flow
+from ..services.external_search_error import ExternalSearchError
 
 MAX_QUERY_LENGTH = 320
 
@@ -32,28 +33,41 @@ class SearchClient:
             enrich=enrich,
         )
         try:
-            response = await self._client.get("/v1/search", params={"q": normalized_query, "enrich": enrich})
-            response.raise_for_status()
-            payload = response.json()
-            log_flow(
-                "search-agent",
-                "search.received",
-                "RAG orchestrator received search results from the search agent.",
-                query=normalized_query,
-                result_count=len(payload.get("results", [])),
-                enrich=enrich,
+            response = await self._client.get(
+                "/v1/search",
+                params={"q": normalized_query, "enrich": enrich},
             )
-            return payload
+            response.raise_for_status()
+            search_response = response.json()
         except Exception as exc:
             log_flow(
                 "search-agent",
-                "search.fallback",
-                "Search request failed, so the orchestrator continued with no external results.",
+                "search.failed",
+                "Search request failed and the orchestrator cannot continue without an explicit search result response.",
                 query=normalized_query,
                 enrich=enrich,
                 error=str(exc),
             )
-            return {"results": []}
+            raise ExternalSearchError(
+                "Search agent failed to return search results."
+            ) from exc
+
+        if not isinstance(search_response, dict):
+            raise ExternalSearchError("Search agent returned an invalid response body.")
+
+        raw_results = search_response.get("results")
+        if raw_results is None or not isinstance(raw_results, list):
+            raise ExternalSearchError("Search agent returned no usable results list.")
+
+        log_flow(
+            "search-agent",
+            "search.received",
+            "RAG orchestrator received search results from the search agent.",
+            query=normalized_query,
+            result_count=len(raw_results),
+            enrich=enrich,
+        )
+        return search_response
 
     async def close(self) -> None:
         await self._client.aclose()

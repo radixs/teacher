@@ -46,7 +46,7 @@ class ChatSessionController extends Controller
         );
 
         try {
-            $session = $this->ragClient->startSession($validated);
+            $response = $this->ragClient->startSession($validated);
         } catch (ConnectionException $exc) {
             return $this->ragUnavailableResponse(
                 step: 'http.sessions.start.failed',
@@ -55,6 +55,7 @@ class ChatSessionController extends Controller
                 error: $exc->getMessage(),
             );
         }
+        $session = $response->json();
 
         $this->flowLogger->log(
             'backend',
@@ -66,7 +67,7 @@ class ChatSessionController extends Controller
             ],
         );
 
-        return response()->json($session);
+        return response()->json($session, $response->status());
     }
 
     public function message(string $sessionId, Request $request): JsonResponse
@@ -107,6 +108,7 @@ class ChatSessionController extends Controller
                 error: $exc->getMessage(),
             );
         }
+        $responseBody = $response->json();
 
         $this->flowLogger->log(
             'backend',
@@ -114,12 +116,12 @@ class ChatSessionController extends Controller
             'Backend is returning the assistant response back to the frontend.',
             [
                 'session_id' => $sessionId,
-                'phase' => $response['session']['phase'] ?? null,
-                'assistant_stage' => $response['last_message']['metadata']['stage'] ?? null,
+                'phase' => $responseBody['session']['phase'] ?? null,
+                'assistant_stage' => $responseBody['last_message']['metadata']['stage'] ?? null,
             ],
         );
 
-        return response()->json($response);
+        return response()->json($responseBody, $response->status());
     }
 
     public function show(string $sessionId): JsonResponse
@@ -134,7 +136,7 @@ class ChatSessionController extends Controller
         );
 
         try {
-            $session = $this->ragClient->fetchSession($sessionId);
+            $response = $this->ragClient->fetchSession($sessionId);
         } catch (ConnectionException $exc) {
             return $this->ragUnavailableResponse(
                 step: 'http.sessions.show.failed',
@@ -143,6 +145,7 @@ class ChatSessionController extends Controller
                 error: $exc->getMessage(),
             );
         }
+        $session = $response->json();
 
         $this->flowLogger->log(
             'backend',
@@ -154,7 +157,7 @@ class ChatSessionController extends Controller
             ],
         );
 
-        return response()->json($session);
+        return response()->json($session, $response->status());
     }
 
     private function ragUnavailableResponse(string $step, string $message, ?string $sessionId, string $error): JsonResponse

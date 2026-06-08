@@ -18,7 +18,7 @@ def log_flow(service: str, step: str, message: str, **context: Any) -> None:
     path = os.environ.get("FLOW_LOG_PATH")
     timestamp = datetime.now(timezone.utc).isoformat()
     sanitized_context = _sanitize(context)
-    payload = {
+    flow_event_document = {
         "timestamp": timestamp,
         "service": service,
         "step": step,
@@ -55,7 +55,7 @@ def log_flow(service: str, step: str, message: str, **context: Any) -> None:
             if fcntl is not None:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
-    _push_event(payload)
+    _push_event(flow_event_document)
 
 
 def _sanitize(value: Any) -> Any:
@@ -70,14 +70,18 @@ def _sanitize(value: Any) -> Any:
     return value
 
 
-def _push_event(payload: dict[str, Any]) -> None:
+def _push_event(flow_event_document: dict[str, Any]) -> None:
     url = os.environ.get("FLOW_EVENT_PUSH_URL")
     if not url:
         return
 
     request = urllib_request.Request(
         url,
-        data=json.dumps(payload, ensure_ascii=True, sort_keys=True).encode("utf-8"),
+        data=json.dumps(
+            flow_event_document,
+            ensure_ascii=True,
+            sort_keys=True,
+        ).encode("utf-8"),
         headers={
             "Accept": "application/json",
             "Content-Type": "application/json",

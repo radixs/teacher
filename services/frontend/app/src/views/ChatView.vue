@@ -164,7 +164,11 @@ async function start() {
 }
 
 async function send(message) {
-  await store.dispatch('sendMessage', { message });
+  try {
+    await store.dispatch('sendMessage', { message });
+  } catch (error) {
+    // error state handled centrally by the store
+  }
 }
 
 async function resume(sessionId) {
@@ -262,12 +266,22 @@ function appendFlowEvent(event) {
     return;
   }
 
+  const shouldStayPinnedToBottom = isNearBottom(flowLogEl.value);
+
   const nextEvents = [...flowEvents.value, event];
   const deduped = nextEvents.filter(
     (entry, index, entries) => index === entries.findIndex((candidate) => candidate.id === entry.id)
   );
 
   flowEvents.value = deduped.slice(-1 * MAX_FLOW_EVENTS);
+  flowPinnedToBottom.value = shouldStayPinnedToBottom;
+
+  if (shouldStayPinnedToBottom) {
+    nextTick(() => {
+      scrollLogToBottom();
+      flowPinnedToBottom.value = true;
+    });
+  }
 }
 
 function connectFlowStream() {
@@ -434,12 +448,17 @@ onBeforeUnmount(() => {
 textarea {
   margin-top: 0.5rem;
   width: 100%;
+  box-sizing: border-box;
   resize: vertical;
   padding: 0.75rem;
   border-radius: 0.5rem;
   border: 1px solid rgba(148, 163, 184, 0.4);
   background: rgba(15, 23, 42, 0.6);
   color: inherit;
+}
+
+.new-session label {
+  display: block;
 }
 
 button {

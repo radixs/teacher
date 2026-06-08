@@ -22,4 +22,21 @@ class ChatSessionTest extends TestCase
 
         $response->assertOk()->assertJson(['id' => 'session-123']);
     }
+
+    public function test_message_propagates_upstream_error_status_and_body(): void
+    {
+        Http::fake([
+            'rag-orchestrator*/sessions/*' => Http::response([
+                'detail' => 'Tuning roadmap generation returned invalid JSON.',
+            ], 503),
+        ]);
+
+        $response = $this->postJson('/api/v1/sessions/session-123', [
+            'message' => 'final calibration answer',
+        ]);
+
+        $response
+            ->assertStatus(503)
+            ->assertJson(['detail' => 'Tuning roadmap generation returned invalid JSON.']);
+    }
 }

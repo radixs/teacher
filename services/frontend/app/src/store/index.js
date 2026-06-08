@@ -48,6 +48,30 @@ const persistActiveSessionId = (sessionId) => {
   }
 };
 
+const extractApiErrorMessage = (error, fallbackMessage) => (
+  error?.response?.data?.detail
+  ?? error?.response?.data?.message
+  ?? error?.message
+  ?? fallbackMessage
+);
+
+const assertSessionResponse = (session, message) => {
+  if (!session?.id || !Array.isArray(session?.messages)) {
+    throw new Error(message);
+  }
+};
+
+const assertSessionMessageResponse = (payload) => {
+  if (!payload?.session || !payload?.last_message) {
+    throw new Error('Session message request returned an invalid response.');
+  }
+
+  assertSessionResponse(
+    payload.session,
+    'Session message request returned an invalid session payload.'
+  );
+};
+
 const toSummary = (session) => ({
   id: session.id,
   goal: session.goal,
@@ -141,13 +165,14 @@ const store = createStore({
       commit('setError', null);
       try {
         const { data } = await api.startSession({ goal, profile });
+        assertSessionResponse(data, 'Session start returned an invalid response.');
         commit('setGoal', goal);
         commit('setSession', data);
         commit('upsertSessionSummary', toSummary(data));
         persistActiveSessionId(data.id);
         return data;
       } catch (error) {
-        commit('setError', error?.message ?? 'Failed to start session');
+        commit('setError', extractApiErrorMessage(error, 'Failed to start session'));
         throw error;
       } finally {
         commit('setLoading', false);
@@ -168,13 +193,14 @@ const store = createStore({
         });
 
         const { data } = await api.sendMessage(state.sessionId, { message, metadata });
+        assertSessionMessageResponse(data);
         commit('appendMessage', data.last_message);
         commit('setSession', data.session);
         commit('upsertSessionSummary', toSummary(data.session));
         persistActiveSessionId(data.session.id);
         return data;
       } catch (error) {
-        commit('setError', error?.message ?? 'Failed to send message');
+        commit('setError', extractApiErrorMessage(error, 'Failed to send message'));
         throw error;
       } finally {
         commit('setLoading', false);
@@ -185,6 +211,7 @@ const store = createStore({
       commit('setError', null);
       try {
         const { data } = await api.fetchSession(sessionId);
+        assertSessionResponse(data, 'Session load returned an invalid response.');
         commit('setGoal', data.goal);
         commit('setSession', data);
         commit('upsertSessionSummary', toSummary(data));
@@ -195,7 +222,7 @@ const store = createStore({
           commit('removeSessionSummary', sessionId);
           persistActiveSessionId(null);
         }
-        commit('setError', error?.message ?? 'Failed to load session');
+        commit('setError', extractApiErrorMessage(error, 'Failed to load session'));
         throw error;
       } finally {
         commit('setLoading', false);
