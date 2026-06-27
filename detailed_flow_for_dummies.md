@@ -4,7 +4,7 @@ This document starts with a simple library story and then gradually moves into e
 
 It is written for experienced backend developers who know distributed application structure, HTTP APIs, persistence, and Docker, but do not yet have intuition for RAG, embeddings, or LLM-driven flows.
 
-## 1. Key Terms First
+## Key Terms First
 
 These terms appear many times in the rest of the document. Each term has two explanations:
 
@@ -13,8 +13,8 @@ These terms appear many times in the rest of the document. Each term has two exp
 
 ### Retrieval-Augmented Generation (RAG)
 
-- Library picture: before Louis the expert librarian answers a visitor, other librarians first bring him the most relevant books, notes, and past visit cards. Louis answers using those materials instead of guessing from memory alone.
-- Technical meaning: an LLM response is improved by retrieving context from storage first, then placing that context into the prompt. In this project, Elasticsearch is the storage layer and the `rag-orchestrator` decides what context to send with the prompt.
+- Library picture: before Louis the expert librarian makes a learning plan, other librarians bring him the visitor's warm-up answers and a quick stack of outside reference cards. Louis uses those materials instead of planning from memory alone. Saved past visit cards are filed away, but the library does not yet semantically search those past cards before every answer.
+- Technical meaning: an LLM response is improved by retrieving context first, then placing that context into the prompt. In this project, the active retrieval path today is roadmap generation: `search-agent` returns public resources, `rag-orchestrator` includes their readable text in the roadmap prompt, and Elasticsearch stores sessions, interactions, snapshots, vectors, resources, and roadmap nodes for persistence and future retrieval work.
 
 ### Embedding
 
@@ -23,8 +23,32 @@ These terms appear many times in the rest of the document. Each term has two exp
 
 ### Vector Store and Matrices
 
-- Library picture: instead of storing only words on cards, the library also stores long rows of numeric weights that describe meaning. When a new question arrives, the library compares its weights to old weights and finds the closest matches.
-- Technical meaning: a vector store is a database that indexes high-dimensional numeric arrays for nearest-neighbor search. Elasticsearch stores these arrays in `dense_vector` fields. When people casually say "matrices" here, think "organized tables of weights used to compare meaning."
+- Library picture: instead of storing only words on cards, the library also stores long rows of numeric weights that describe meaning. In a complete semantic-retrieval flow, a new question gets its own meaning card and the catalog compares it with old cards to find the closest matches.
+- Technical meaning: a vector store is a database that indexes high-dimensional numeric arrays for nearest-neighbor search. Elasticsearch stores these arrays in `dense_vector` fields. This repository already stores those vectors, but does not yet use them for vector-nearest retrieval before every LLM prompt. When people casually say "matrices" here, think "organized tables of weights used to compare meaning."
+
+### How Embeddings Fit Into RAG
+
+- Library picture: in a complete semantic RAG flow, if the visitor asks, "How do I make search smarter?", the librarians do not only look for cards containing the exact words "make search smarter." Emily first makes a meaning-shape card for the new question. The catalog compares that shape against the shapes already stored on old cards. Cards about "semantic retrieval," "vector search," or "relevance tuning" can be found even if they do not use the same wording. The librarians then hand Louis the actual readable notes from those cards, not the secret shape numbers.
+- Technical meaning: in a RAG system, embeddings usually power the retrieval step before the LLM prompt is built. The incoming user text is embedded, Elasticsearch compares that vector to stored `dense_vector` fields, and the closest matching documents are selected. After that, the orchestrator sends the LLM normal text from those documents, such as titles, snippets, summaries, learner answers, or knowledge snapshots. The LLM does not receive the raw 768-number vectors as useful context. The vectors are for finding relevant rows; the text fields are what get appended to the model prompt.
+
+Why not just store text?
+
+- Exact text search only finds what shares words. If the stored note says "nearest-neighbor retrieval" and the learner asks "how does semantic memory work?", plain keyword search may miss it.
+- Embeddings let the system search by meaning. That matters when learners paraphrase, use beginner vocabulary, or ask follow-up questions in a different wording from the stored resource.
+- Text is still required. Embeddings help choose the best records, but the answer is grounded in the readable text attached to those records.
+
+When is `dense_vector` used?
+
+- In the general RAG pattern, `dense_vector` is used during the Elasticsearch retrieval query, before the final LLM prompt is assembled.
+- Such an app embeds the new query, asks Elasticsearch for vector-nearest documents, receives matching rows, extracts their readable text fields, and places those text snippets into the prompt.
+- The embedding itself is not the lesson content. It is the lookup key that helps find lesson content.
+
+Current project reality:
+
+- This project already writes embeddings into Elasticsearch for learner profiles, user interactions, knowledge snapshots, and learning resources.
+- The roadmap-generation flow currently retrieves external resources through `search-agent` and DuckDuckGo, embeds those resources, stores them in `learning_resources`, and sends the readable resource text to `llm-engine`.
+- The current code does not yet show an Elasticsearch vector similarity query over `dense_vector` fields before every LLM call. In other words, the vector-capable memory is being built and stored, but the full "embed new prompt -> vector-search Elasticsearch -> append matching stored text to prompt" loop is not yet active everywhere.
+- Follow-up interactions do create embeddings and persist the conversation to Elasticsearch. Today, follow-up handling mainly uses the active session state, current phase, current roadmap concept, current learner answer, and stored session document. The intended RAG memory behavior is to also retrieve semantically similar earlier records for each prompt, but that retrieval step still needs explicit vector-search code before it is truly happening on every follow-up.
 
 ### BM25
 
@@ -33,8 +57,8 @@ These terms appear many times in the rest of the document. Each term has two exp
 
 ### Semantic Search
 
-- Library picture: even if the visitor asks "how to make search results feel smarter," the library can still find books about "relevance tuning" because the meaning is close, not just the words.
-- Technical meaning: semantic search compares embeddings instead of exact words. It is useful when the wording changes but the intent stays similar.
+- Library picture: even if the visitor asks "how to make search results feel smarter," a semantic catalog could still find books about "relevance tuning" because the meaning is close, not just the words.
+- Technical meaning: semantic search compares embeddings instead of exact words. It is useful when the wording changes but the intent stays similar. The project stores the embeddings needed for this, but full Elasticsearch semantic retrieval is not currently wired into every prompt.
 
 ### Calibration
 
@@ -49,12 +73,65 @@ These terms appear many times in the rest of the document. Each term has two exp
 ### Context Window
 
 - Library picture: Louis can only keep a limited stack of open notes on his desk at once.
-- Technical meaning: the LLM can only process a limited amount of text per request. In `services/llm-engine/config.yaml`, the current context length is `4096`.
+- Technical meaning: the LLM can only process a limited amount of text per request. In `services/llm-engine/config.yaml`, the current context length is `12288`.
+
+Model size and quality:
+
+- Bigger models usually have more internal capacity. They often understand instructions better, connect ideas more reliably, and handle ambiguous questions with fewer mistakes.
+- Smaller models are faster and cheaper to run on local hardware, but they usually have weaker reasoning, weaker instruction following, and less reliable factual recall.
+- A quantized local model, such as this project's Mistral 7B `Q4_K_M`, trades some precision for memory savings and speed. That is why it can fit on practical hardware, but it may be less accurate than a larger or less-compressed model.
+- No model is automatically truthful. The model predicts likely text. RAG helps by putting relevant source text into the prompt, but the model can still misunderstand, overgeneralize, or invent details if the prompt is weak, contradictory, or missing key facts.
+
+Big context window vs small context window:
+
+- A small context window is like a small desk. The model can only see a short prompt, a few retrieved notes, and a short conversation history. This forces the system to choose context carefully.
+- A big context window is like a bigger desk. The model can see more previous turns, more documents, longer instructions, and more examples in one request.
+- Bigger is useful when the answer really depends on many pages of context, but it is not magic. Long prompts are slower, use more memory, and can contain distracting or contradictory material.
+- Models can also suffer from "lost in the middle": information near the start or end of a long prompt may influence the answer more strongly than important details buried in the middle.
+
+Using only part of the context window vs filling it:
+
+- Using a small, carefully chosen part of the window is often better than filling the whole window with everything available.
+- Good RAG retrieves the most relevant text, trims duplicates, removes weak material, and sends a focused prompt.
+- Filling the entire window can help if all included text is relevant and well organized.
+- Filling the window with loosely related notes can make hallucination more likely, because the model may blend unrelated facts, pick the wrong source, or invent a bridge between conflicting pieces of context.
+- Hallucination often happens when the model lacks enough grounding, receives noisy or contradictory context, is asked for facts not present in the prompt, or is pushed to answer even when it should say "I do not know."
+
+How the LLM processes text and writes an answer:
+
+- First, the input text is split into tokens. A token can be a word, part of a word, punctuation, or whitespace-like unit.
+- Each token is converted into numbers called an embedding. This is the model's internal numeric form for text. It is related to the embedding idea used in RAG, but it is inside the LLM and not the same vector stored in Elasticsearch.
+- The tokens then pass through many transformer layers. These layers contain learned matrices and vectors, plus attention mechanisms that let each token look at other tokens in the context.
+- During inference, the text does not "fall through and then go backwards" to become an answer. The backward pass is mainly a training concept, where model weights are adjusted after errors are measured.
+- During normal answering, the model does a forward pass and produces scores for possible next tokens. These scores are called logits.
+- The inference server chooses the next token from those scores, using decoding settings such as temperature and sampling rules.
+- The chosen token is appended to the conversation, then fed back into the model as part of the context to choose the next token.
+- This repeats one token at a time until the model reaches a stop token, a token limit, or another stopping rule.
+- Finally, the output token ids are decoded back into readable text and returned to the app.
 
 ### Grading Profile
 
 - Library picture: the librarians use a scoring sheet so every exercise is judged by the same rules instead of mood.
 - Technical meaning: `services/rag-orchestrator/config/grading_profiles.yaml` defines the rubric, threshold, and feedback rules used by `ExerciseGraderService`.
+
+What it is for in the app:
+
+- The learning phase gives the learner an exercise for the current concept.
+- When the learner answers, the app asks `llm-engine` to grade that answer.
+- The grading profile tells the LLM what "good enough" means. Today the default profile scores coverage, practical application, and clarity.
+- The profile also defines the pass threshold. In the current config, the answer must reach `0.6` or higher to pass.
+- The grading profile is not the learner's lesson plan. It is the judge's rule sheet used after the learner submits an answer.
+
+Plain example:
+
+- Learner concept: "Embeddings and vector search"
+- Exercise: "Describe how embeddings enable semantic retrieval."
+- Learner answer: "Embeddings turn text into vectors so similar meanings can be compared."
+- Grading profile asks:
+  - Did they cover the key concept?
+  - Did they connect it to a practical scenario?
+  - Was the answer clear enough?
+- The LLM must return JSON with `passed`, `score`, `feedback`, and `highlights`.
 
 ### HIP Acceleration
 
@@ -66,744 +143,26 @@ These terms appear many times in the rest of the document. Each term has two exp
 - Library picture: a string map on the wall shows which books must be read before other books make sense.
 - Technical meaning: the roadmap is stored as concept nodes with prerequisites. Elasticsearch index `dependency_graph` is used to persist these nodes.
 
-## 2. Reality Check: What Is Real Today vs What Is Still Scaffolded
+What it is for in the app:
 
-This project still has scaffolded areas, but the previously missing runtime pieces in the main learning path are now active.
+- After calibration, the system generates a learning roadmap.
+- Each roadmap item becomes one concept node: concept id, concept name, summary, difficulty, exercise, resources, and prerequisites.
+- Prerequisites tell the app which ideas should come before other ideas.
+- The current runtime mostly walks the session's roadmap in order with `current_concept_index`; storing the same concept nodes as a graph-like structure makes the plan inspectable in Elasticsearch and easier to extend later.
+- The dependency graph is not the vector store and not the grading rubric. It is the saved structure of "what should be learned, in what relationship to other concepts."
 
-- Calibration is real and now strictly LLM-driven; invalid model output fails session creation instead of silently degrading.
-- Tuning roadmap generation is real and now uses adaptive retrieval: `search-agent` gathers public resources, `embedding-worker` embeds them, Elasticsearch stores them, and `llm-engine` turns that context into a roadmap.
-- Learning phase and grading loop are real.
-- LLM-based grading uses the model's chat-completions path and asks for strict JSON. Invalid model output now fails the request instead of triggering local scoring.
-- `search-agent` is now part of the main tuning flow coordinated by `app/services/resource_discovery_service.py` and `app/services/tuning_workflow_service.py`.
-- Elasticsearch vector-capable indices `user_profiles` and `learning_resources` are now written on the hot path, not just provisioned.
-- Kibana is still only a human inspection screen. That simply means the app does not call Kibana as part of a learner session. A developer or presenter opens Kibana manually in the browser to inspect what Elasticsearch contains.
+Plain example:
 
-That distinction still matters. The rest of this document separates:
+- Node 1: "Basic embeddings"
+  - prerequisites: none
+- Node 2: "Vector search"
+  - prerequisites: "Basic embeddings"
+- Node 3: "Hybrid retrieval"
+  - prerequisites: "Vector search"
 
-- implemented hot-path flow
-- manual inspection flow
-- future enhancement areas
+That means the learner should understand embeddings before vector search, and vector search before hybrid retrieval.
 
-## 3. Shared Building Rules
-
-These files affect multiple librarians at once:
-
-- `docker-compose.yml`
-- `.env.dist`
-- `README.md`
-- `flows.md`
-- `rollout.md`
-- `AGENTS.md`
-- `librarian_story.md`
-- `infrastructure/demo-logs/.gitignore`
-
-Important shared runtime choices:
-
-- All services run in Docker containers.
-- The main network is `appnet`.
-- The chat model is `mistral-7b-instruct-v0.2` in GGUF `Q4_K_M` form.
-- Embeddings are `bge-base-en-v1.5`, 768 dimensions.
-- Elasticsearch indices are bootstrapped by `infrastructure/elasticsearch/scripts/bootstrap.sh`.
-- The single demo log file path is `infrastructure/demo-logs/teacher-flow.log` on the host, mounted into containers as `/shared-logs/teacher-flow.log`.
-
-## 4. Meet The Librarians
-
-Each librarian gets:
-
-- plain child-safe explanation
-- exact technical responsibility
-- handoff behavior
-- owned files and configs
-
-### 4.1 Frontend
-
-#### Child-safe explanation
-
-Frontend is the librarian at the welcome desk. This librarian smiles, asks what the visitor wants to learn, writes down the visitor's replies, shows the conversation on the screen, and hands the request slip to the backend librarian.
-
-Frontend does not decide what to teach. It only collects input, displays output, remembers recent visits in the browser, and sends requests to the next librarian.
-
-#### Technical responsibility
-
-- Vue 3 SPA rendered by Vite.
-- Keeps current chat messages, current session id, and browser-local session history in Vuex.
-- Calls Laravel API endpoints through Axios.
-- Restores the last active session from browser localStorage when the page loads.
-
-#### Handoff behavior
-
-- Hands `goal` and optional `profile` to backend when a new session starts.
-- Hands `message` and optional `metadata` to backend for every learner turn.
-- Requests session reload by `sessionId` when the user resumes an old session.
-
-#### Files and configs
-
-- Shared env: `.env.dist` values `FRONTEND_PORT`, `FRONTEND_INTERNAL_PORT`, `FRONTEND_VITE_API_BASE_URL` - Control host port exposure and the backend base URL that browser requests target. These values decide how the frontend enters the rest of the flow.
-- Shared config: `docker-compose.yml` - Declares how the frontend container starts, which port it exposes, and how it reaches the backend. This is the frontend's runtime wiring into the multi-container stack.
-- `services/frontend/Dockerfile` - Builds the Node/Vite container image for the browser app. It matters at startup time when Docker needs a runnable frontend environment.
-- `services/frontend/entrypoint.sh` - Starts the frontend dev server inside the container. This is the frontend's runtime launch point in the compose flow.
-- `services/frontend/app/src/main.js` - Bootstraps Vue, Vuex, and the router, then hydrates stored session state before mount. This is the first browser code that starts the learner flow.
-- `services/frontend/app/src/store/index.js` - Holds browser-side state, localStorage restore logic, and the actions that call the backend. This is the frontend control center for session lifecycle.
-- `services/frontend/app/src/services/api.js` - Wraps Axios and the live `EventSource` connection to Laravel. It is the frontend's network bridge into backend APIs and the pushed flow console.
-- `services/frontend/app/src/App.vue` - Root Vue shell that hosts the router view. It is the top-level frame around the whole UI flow.
-- `services/frontend/app/src/router/index.js` - Defines browser routes and points the app at the chat screen. It controls which top-level page is shown.
-- `services/frontend/app/src/views/ChatView.vue` - Main screen for starting sessions, showing messages, and displaying the live flow console. This is where the learner interacts with the system most directly.
-- `services/frontend/app/src/components/ChatInput.vue` - Input box and submit behavior for learner turns. It is the last frontend step before a message becomes an API call.
-- `services/frontend/app/src/components/ChatMessage.vue` - Renders each message in the transcript with role-specific formatting. It turns backend/orchestrator responses into visible conversation history.
-- `services/frontend/app/src/styles.css` - Global frontend styling, typography, and base layout defaults. It shapes the look and readability of the app around the main chat flow.
-
-### 4.2 Backend
-
-#### Child-safe explanation
-
-Backend is the librarian behind the welcome desk office door. This librarian checks that the request slip is filled correctly, stamps it, and sends it to the smart planning librarian.
-
-Backend is the gatekeeper. It does not invent the lesson content, but it controls the official entrance into the system.
-
-#### Technical responsibility
-
-- Laravel 12 API.
-- Defines public REST endpoints for session start, message send, and session load.
-- Validates incoming payloads.
-- Delegates all session intelligence to `RagClient`, which calls `rag-orchestrator`.
-- Emits the first durable log line for each browser action.
-
-#### Handoff behavior
-
-- Receives HTTP from frontend.
-- Delegates to `RagClient`.
-- Returns JSON payloads back to frontend.
-
-#### Files and configs
-
-- Shared env: `.env.dist` values `BACKEND_PORT`, `APP_ENV`, `APP_DEBUG`, `RAG_ORCHESTRATOR_URL`, `FLOW_EVENT_*` via runtime env - Control how Laravel is exposed, how noisy it is, where it forwards learner requests, and how live flow events are buffered and streamed.
-- Shared config: `docker-compose.yml` - Defines backend ports, mounts, dependencies, and env injection. It is the runtime contract that places Laravel between the browser and Python services.
-- `services/backend/Dockerfile` - Builds the PHP CLI image with Laravel dependencies and extensions. It creates the container that fronts every browser API call.
-- `services/backend/entrypoint.sh` - Prepares the Laravel app and starts `php artisan serve`. It is the backend container's runtime launch sequence.
-- `services/backend/app/config/app.php` - Core Laravel application settings such as app name, environment, and providers. It shapes backend runtime behavior globally.
-- `services/backend/app/app/Providers/AppServiceProvider.php` - Generic Laravel service bootstrapping point. It is where app-wide framework registrations would live.
-- `services/backend/app/config/rag.php` - URLs, timeouts, and Elasticsearch-related integration settings for the RAG stack. This file directly controls how Laravel reaches the orchestrator and related services.
-- `services/backend/app/config/flow_events.php` - Settings for the live event buffer, retention, polling, and token protection. It controls how pushed logs become browser-visible flow events.
-- `services/backend/app/config/cache.php` - Cache store definitions, including the dedicated store for live flow events. It supports both framework caching and the browser event buffer.
-- `services/backend/app/app/Providers/RagServiceProvider.php` - Registers `RagClient`, flow logging, and the flow event stream services. This is the backend wiring layer for PHP-to-Python handoff and live event push.
-- `services/backend/app/routes/api.php` - Maps browser-facing API routes to the chat and flow-event controllers. It defines the HTTP entrypoints into backend-controlled flow.
-- `services/backend/app/app/Http/Controllers/Controller.php` - Base Laravel controller class. It provides the common controller foundation used by API endpoints.
-- `services/backend/app/app/Http/Controllers/Api/ChatSessionController.php` - Defines the public session start, message, and resume endpoints. This is the first PHP code hit by the frontend on the learner hot path.
-- `services/backend/app/app/Services/Rag/RagClient.php` - Wraps HTTP calls from Laravel into `rag-orchestrator`. It is the backend bridge that forwards validated learner requests downstream.
-- `services/backend/app/app/Support/FlowLogger.php` - Writes backend flow lines and mirrors them into the browser event stream. It is the backend observability hook around each request transition.
-- `services/backend/app/app/Http/Controllers/Api/FlowEventController.php` - Accepts pushed flow events from services and streams them to the browser with SSE. It powers the live flow console without reading the log file.
-- `services/backend/app/app/Support/FlowEventStream.php` - Maintains the rolling event buffer used by SSE clients. It is the in-backend memory-like queue behind the live flow console.
-- `services/backend/app/routes/web.php` - Default Laravel web route definitions. It is not part of the SPA API hot path.
-- `services/backend/app/routes/console.php` - Artisan command route definitions. It belongs to operator and maintenance flow, not learner traffic.
-- `services/backend/app/config/auth.php` - Authentication guard and provider settings. It is mostly scaffolding today because the learning flow is not user-auth driven yet.
-- `services/backend/app/config/database.php` - Database connection definitions. It mostly backs framework features rather than the Elasticsearch-based learning session model.
-- `services/backend/app/config/filesystems.php` - Filesystem disk settings. It matters when Laravel needs local/public/private storage locations.
-- `services/backend/app/config/logging.php` - Standard Laravel log-channel configuration. It governs framework logging separately from the custom demo flow logger.
-- `services/backend/app/config/mail.php` - Mail transport settings. It is not active in the current learner request flow.
-- `services/backend/app/config/queue.php` - Queue backend configuration. It matters for deferred work later, though the current hot path stays synchronous.
-- `services/backend/app/config/services.php` - Third-party service configuration scaffold. It is standard Laravel infrastructure and not central to the current learning flow.
-- `services/backend/app/config/session.php` - Laravel framework session settings. It is separate from the domain-level learning session persisted in Elasticsearch.
-- `services/backend/app/app/Models/User.php` - Default Laravel user model scaffold. It is not central to the current anonymous learning flow but remains part of the backend application skeleton.
-- `services/backend/app/storage/logs/.gitignore` - Keeps the Laravel log directory in git without storing generated logs. It preserves the writable runtime path used by the container.
-- `services/backend/app/storage/app/.gitignore` - Keeps the app storage root present in git. It reserves the writable file area Laravel expects at runtime.
-- `services/backend/app/storage/app/public/.gitignore` - Keeps the public storage directory present. It is the expected location for publicly exposed generated files if used later.
-- `services/backend/app/storage/app/private/.gitignore` - Keeps the private storage directory present. It is the reserved location for non-public generated files.
-- `services/backend/app/storage/framework/cache/.gitignore` - Keeps the framework cache root in version control as an empty writable directory. It supports file-based cache behavior inside the container.
-- `services/backend/app/storage/framework/cache/data/.gitignore` - Keeps the nested Laravel file-cache directory present. It is used when cache entries are written to disk.
-- `services/backend/app/storage/framework/sessions/.gitignore` - Keeps the Laravel framework session directory present. It supports file-based framework sessions if enabled.
-- `services/backend/app/storage/framework/views/.gitignore` - Keeps the compiled-view directory present. Laravel writes rendered Blade cache files here when needed.
-- `services/backend/app/storage/framework/testing/.gitignore` - Keeps the testing storage directory present. It supports isolated runtime artifacts during PHPUnit runs.
-
-### 4.3 RAG Orchestrator
-
-#### Child-safe explanation
-
-This is the head teaching librarian. This librarian decides which stage the visitor is in, asks the next calibration question, builds the learning roadmap, grades exercises, and decides what should happen next.
-
-If frontend is the welcome desk and backend is the gatekeeper, `rag-orchestrator` is the actual brain of the library workflow.
-
-#### Technical responsibility
-
-- FastAPI application under `/v1`.
-- Uses a thin controller layer for HTTP request and response handling.
-- Uses `SessionWorkflowService` as the main application-service layer for session use-cases.
-- Uses `SessionManagerService` for in-memory session mutation and phase transitions.
-- Persists and restores sessions from Elasticsearch through `SessionStore` and `LearningMemoryRepository`.
-- Calls embedding service, search service, and LLM service.
-- Generates calibration snapshots, roadmap transitions, learning prompts, and grading actions.
-
-#### Handoff behavior
-
-- Receives validated calls from Laravel backend.
-- Calls `embedding-worker` for vectors.
-- Calls `llm-engine` for grading prompts.
-- Can call `search-agent` for external web retrieval.
-- Writes session artifacts to Elasticsearch.
-
-#### Files and configs
-
-- Shared env: `.env.dist` values `RAG_HOST`, `RAG_PORT`, `RAG_RELOAD`, `RAG_LLM_ENGINE_URL`, `RAG_EMBEDDING_SERVICE_URL`, `RAG_SEARCH_AGENT_URL`, `RAG_ELASTICSEARCH_URL`, `RAG_INDEX_*`, `RAG_GRADING_PROFILE`, `RAG_GRADING_CONFIG_PATH`, `RAG_LAB_TEMPLATE_DIR`, `RAG_LAB_OUTPUT_ROOT`, `RAG_LAB_AUTO_WRITE` - Control where the orchestrator listens, which downstream services it calls, where it persists data, and how grading/lab generation behave in the flow.
-- Shared config: `docker-compose.yml` - Declares ports, dependency ordering, mounted code/config paths, and shared logs. It places the orchestrator in the middle of all other runtime containers.
-- `services/rag-orchestrator/Dockerfile` - Builds the FastAPI orchestration service image. It packages the code that owns the real learning workflow.
-- `services/rag-orchestrator/entrypoint.sh` - Starts the FastAPI server with configured host and port. It is the runtime launch point for the orchestrator container.
-- `services/rag-orchestrator/requirements.txt` - Declares Python dependencies such as FastAPI and integration clients. It defines what the orchestrator needs to run its state machine.
-- `services/rag-orchestrator/app/main.py` - Creates the FastAPI app, attaches the lifespan bootstrap, and mounts the session router. It is the service entry point.
-- `services/rag-orchestrator/app/core/application_bootstrap.py` - Owns startup hydration and shutdown cleanup. It is the lifecycle boundary around persisted-session preload and downstream client closing.
-- `services/rag-orchestrator/app/core/service_container.py` - Defines FastAPI dependency providers. It is the service-container-like wiring layer that assembles routers, workflows, repositories, and shared clients.
-- `services/rag-orchestrator/app/core/config/` - Reads and exposes environment-backed service settings plus grading/calibration/tuning config objects.
-- `services/rag-orchestrator/app/core/flow_logger.py` - Emits orchestrator flow logs and mirrors them into the browser event stream. It is the observability hook around the central workflow engine.
-- `services/rag-orchestrator/app/dto/` - Defines one-file-per-class request and response DTOs for the public HTTP interface.
-- `services/rag-orchestrator/app/models/message_model.py` and `services/rag-orchestrator/app/models/session_model.py` - Define the internal message and session structures used across phase transitions and persistence.
-- `services/rag-orchestrator/app/api/routes/sessions_router.py` - Defines the core `/v1/sessions` endpoints. It is the thin HTTP router that validates payloads, logs API boundaries, delegates to the workflow layer, and translates domain errors into HTTP responses.
-- `services/rag-orchestrator/app/mappers/session_response_mapper.py` - Converts internal session and message models into response DTOs. It keeps HTTP response shaping separate from business logic.
-- `services/rag-orchestrator/app/services/user_workflow_service.py` - Orchestrates the top-level session use-cases. It restores sessions, dispatches by phase, and finalizes assistant turns.
-- `services/rag-orchestrator/app/services/session_manager_service.py` - Mutates session state in memory across calibration, tuning, and learning. It is the phase-transition engine for a single learner session.
-- `services/rag-orchestrator/app/services/calibration_planner_service.py` - Generates calibration questions and calibration snapshot data.
-- `services/rag-orchestrator/app/services/calibration_workflow_service.py` - Owns calibration answer handling and next-question vs tuning-transition decisions.
-- `services/rag-orchestrator/app/services/tuning_program_generator_service.py` - Builds search queries and roadmap structures from calibration answers and retrieved resources.
-- `services/rag-orchestrator/app/services/tuning_workflow_service.py` - Owns the calibration-to-learning transition.
-- `services/rag-orchestrator/app/services/learning_coordinator_service.py` - Reads the current roadmap node and formats concept overviews.
-- `services/rag-orchestrator/app/services/learning_workflow_service.py` - Owns learning answer evaluation and next-turn response construction.
-- `services/rag-orchestrator/app/services/exercise_grader_service.py` - Builds grading prompts and parses strict model JSON. It controls pass/retry decisions during learning.
-- `services/rag-orchestrator/config/grading_profiles.yaml` - Stores grading rubrics, thresholds, and expected feedback structure. It is the main configuration source for evaluation behavior.
-- `services/rag-orchestrator/app/services/lab_primer_service.py` - Renders `/lab` output from templates. It owns the practice-kit branch outside the normal lesson answer path.
-- `services/rag-orchestrator/lab_templates/README.md.tpl` - Template for the generated lab README. It explains the exercise package returned by `/lab`.
-- `services/rag-orchestrator/lab_templates/docker-compose.yml.tpl` - Template for the generated lab container setup. It gives learners a runnable environment recipe.
-- `services/rag-orchestrator/lab_templates/Makefile.tpl` - Template for the generated lab helper commands. It turns the lab package into a more guided operator flow.
-- `services/rag-orchestrator/lab_templates/notes.md.tpl` - Template for generated study or exercise notes. It rounds out the `/lab` package with human-readable guidance.
-- `services/rag-orchestrator/app/repositories/session_repository.py` - Saves and restores full session documents from Elasticsearch. It gives the orchestrator stateless process resilience across visits and restarts.
-- `services/rag-orchestrator/app/repositories/learning_memory_repository.py` - Hides the concrete Elasticsearch index names used for interactions, snapshots, dependency nodes, resources, and user profiles. It keeps persistence details out of the workflow layer.
-- `services/rag-orchestrator/app/services/resource_discovery_service.py` - Calls `search-agent`, normalizes search results, computes resource embeddings, and persists learning resources. It owns the orchestrator-side web-search behavior above the raw HTTP client.
-- `services/rag-orchestrator/app/clients/search_client.py` - Calls `search-agent` for external resources. It is the orchestrator's web-retrieval connector during roadmap generation.
-- `services/rag-orchestrator/app/clients/embedding_client.py` - Calls `embedding-worker` over HTTP. It is the orchestrator-to-vector-service bridge.
-- `services/rag-orchestrator/app/clients/llm_client.py` - Calls `llm-engine` through strict chat-completions behavior. It is the orchestrator's text-generation and grading gateway.
-- `services/rag-orchestrator/app/clients/elasticsearch_client.py` - Encapsulates reads and writes to Elasticsearch indices. It is the persistence adapter for sessions, interactions, snapshots, graph nodes, resources, and profiles.
-- `services/rag-orchestrator/app/tests/test_sessions.py` - Exercises the session endpoints and major phase transitions under pytest. It validates the orchestrator hot path in automated checks.
-- `services/rag-orchestrator/app/__init__.py` - Marks the top-level app package. It supports Python module loading for the orchestrator codebase.
-- `services/rag-orchestrator/app/api/__init__.py` - Marks the API package. It organizes HTTP-facing code under a clear namespace.
-- `services/rag-orchestrator/app/api/routes/__init__.py` - Marks the routes package. It keeps route modules grouped cleanly for FastAPI import wiring.
-- `services/rag-orchestrator/app/clients/__init__.py` - Marks the downstream client package. It groups adapters that call other services.
-- `services/rag-orchestrator/app/core/__init__.py` - Marks the core package. It keeps low-level app wiring grouped separately from business logic.
-- `services/rag-orchestrator/app/models/__init__.py` - Marks the models package. It groups request, response, and session data structures.
-- `services/rag-orchestrator/app/repositories/__init__.py` - Marks the repository package. It groups persistence-facing adapters that sit between business logic and Elasticsearch writes.
-- `services/rag-orchestrator/app/services/__init__.py` - Marks the service-layer package. It keeps business logic modules grouped together.
-- `services/rag-orchestrator/app/tests/__init__.py` - Marks the test package. It supports Python test discovery for the orchestrator suite.
-
-### 4.4 LLM Engine (Louis)
-
-#### Child-safe explanation
-
-Louis is the very smart specialist librarian. Louis reads a big stack of notes and tries to produce the final explanation or grading judgment. Louis is smart, but Louis only sees what the other librarians place on the desk.
-
-Louis does not manage the whole library. Louis only answers when asked.
-
-#### Technical responsibility
-
-- Hosts llama.cpp server.
-- Loads Mistral 7B Instruct GGUF file.
-- Uses HIP/ROCm GPU offload by default on the RX 6600, with CPU fallback available through `LLM_ACCELERATION_MODE=cpu`.
-- Current hot-path usage includes calibration question generation, roadmap generation, and grading through `LlmClient`.
-
-#### Handoff behavior
-
-- Receives HTTP completion requests from `rag-orchestrator` for calibration, tuning, and grading work.
-- Returns generated text or fails, which now stops the active orchestrator request explicitly.
-
-#### Files and configs
-
-- Shared env: `.env.dist` values `LLM_ENGINE_PORT`, `LLM_MODEL_URL`, `LLM_CONTEXT_WINDOW`, `LLM_THREADS`, `LLM_BATCH_SIZE`, `LLM_ACCELERATION_MODE`, `LLM_GPU_LAYERS`, `LLM_SERVER_HOST`, `LLM_SERVER_PORT`, `HSA_OVERRIDE_GFX_VERSION`, `HIP_VISIBLE_DEVICES` - Override model location, prompt window, throughput settings, and CPU/GPU behavior. These values decide how fast and where model inference runs.
-- Shared config: `docker-compose.yml` - Mounts the model volume, exposes port 8000, injects runtime env, and maps GPU devices. It is the container-level wiring that lets the orchestrator reach Louis.
-- `services/llm-engine/Dockerfile` - Builds the llama.cpp runtime image with ROCm support and the server binary. It defines how Louis becomes a runnable GPU-capable container.
-- `services/llm-engine/entrypoint.sh` - Resolves config/env, downloads the model if needed, chooses CPU or GPU mode, and starts `llama-server`. It is the main runtime controller for model startup.
-- `services/llm-engine/config.yaml` - Declares the model file, context window, GPU layer count, threads, and batch size. It directly governs memory usage, acceleration, and request capacity in the model flow.
-
-### 4.5 Embedding Worker (Emily)
-
-#### Child-safe explanation
-
-Emily is the librarian who turns text into meaning-shape cards. Emily does not explain anything to the visitor directly. Emily just creates the special number patterns that help the library compare meanings.
-
-#### Technical responsibility
-
-- FastAPI service with sentence-transformers.
-- Loads `BAAI/bge-base-en-v1.5`.
-- Returns normalized 768-dimensional vectors.
-
-#### Handoff behavior
-
-- Receives text from `rag-orchestrator`.
-- Returns embedding vectors.
-- Does not persist state itself.
-
-#### Files and configs
-
-- Shared env: `.env.dist` values `EMBEDDING_PORT`, `EMBEDDING_MODEL_NAME`, `EMBEDDING_MODEL_NAME_OR_PATH`, `EMBEDDING_DEVICE`, `EMBEDDING_CACHE_DIR`, `EMBEDDING_DIMENSIONS` - Control which embedding model runs, where it is cached, whether it uses CPU or another device, and what vector shape the rest of the flow expects.
-- Shared config: `docker-compose.yml` - Exposes the embedding port and mounts the model cache volume. It is the runtime wiring that makes Emily reachable from the orchestrator.
-- `services/embedding-worker/Dockerfile` - Builds the sentence-transformers service image. It packages Emily's vector-making environment.
-- `services/embedding-worker/entrypoint.sh` - Starts the FastAPI embedding service inside the container. It is the embedding worker's runtime launch point.
-- `services/embedding-worker/requirements.txt` - Declares Python and ML dependencies for embeddings. It defines the software stack behind vector generation.
-- `services/embedding-worker/app/main.py` - Defines the `/embed` endpoint and lazy model-load behavior. This is the hot path that turns learner or resource text into vectors.
-- `services/embedding-worker/app/flow_logger.py` - Emits embedding-service flow logs and browser-visible events. It provides observability around vector requests and model loading.
-- `services/embedding-worker/app/tests/test_embed.py` - Verifies the embedding endpoint returns expected vector structure. It guards the service contract used by the orchestrator.
-- `services/embedding-worker/app/__init__.py` - Marks the embedding app package. It supports module import structure for the service.
-
-### 4.6 Search Agent
-
-#### Child-safe explanation
-
-This librarian is the one allowed to walk outside your library and check other public libraries. If the home library is missing something, this librarian can bring back book titles, summaries, and sometimes short copied notes.
-
-#### Technical responsibility
-
-- FastAPI service.
-- Queries DuckDuckGo HTML endpoint.
-- Can optionally fetch and clean result pages for richer content.
-- Acts as the external knowledge connector and is now part of the tuning hot path after calibration completes.
-
-#### Handoff behavior
-
-- Receives queries from `rag-orchestrator`.
-- Returns result lists and optional enriched page content.
-
-#### Files and configs
-
-- Shared env: `.env.dist` values `SEARCH_AGENT_PORT`, `DUCKDUCKGO_REQUEST_INTERVAL_SECONDS`, `DUCKDUCKGO_USER_AGENT` - Control where the service listens and how aggressively or politely it hits DuckDuckGo. These settings shape the speed and compliance behavior of external retrieval.
-- Shared config: `docker-compose.yml` - Exposes the search port and injects runtime env. It is the runtime wiring that puts the outside-search librarian on the network for orchestrator calls.
-- `services/search-agent/Dockerfile` - Builds the FastAPI search service image. It packages the external-retrieval librarian into a runnable container.
-- `services/search-agent/entrypoint.sh` - Starts the search API inside the container. It is the runtime launch path for the web retrieval service.
-- `services/search-agent/requirements.txt` - Declares HTTP, parsing, and FastAPI dependencies. It defines the software needed to query DuckDuckGo and clean results.
-- `services/search-agent/app/main.py` - Creates the FastAPI app and startup behavior. It is the bootstrap point for the search service.
-- `services/search-agent/app/config.py` - Reads environment-backed settings such as request interval and user agent. It controls how politely and consistently the service searches the web.
-- `services/search-agent/app/flow_logger.py` - Emits search-service flow logs and browser-visible events. It makes retrieval behavior observable during roadmap generation.
-- `services/search-agent/app/routes/search.py` - Defines the `/v1/search` endpoint, request parsing, and result assembly. This is the active tuning-flow entrypoint used by the orchestrator.
-- `services/search-agent/app/clients/duckduckgo.py` - Implements DuckDuckGo HTML querying and result extraction. It is the first external retrieval step in the search flow.
-- `services/search-agent/app/scrapers/simple.py` - Fetches and cleans individual result pages when enrichment is enabled. It supports the slower, richer branch of external retrieval.
-- `services/search-agent/app/tests/test_parse.py` - Verifies result parsing behavior. It protects the normalized search-card contract consumed by the orchestrator.
-- `services/search-agent/app/__init__.py` - Marks the app package. It supports Python import structure for the service.
-- `services/search-agent/app/routes/__init__.py` - Marks the routes package. It keeps HTTP endpoint modules grouped together.
-- `services/search-agent/app/clients/__init__.py` - Marks the client package. It groups lower-level retrieval adapters.
-- `services/search-agent/app/scrapers/__init__.py` - Marks the scraper package. It groups optional page-enrichment helpers.
-- `services/search-agent/app/tests/__init__.py` - Marks the test package. It supports Python test discovery for the search service.
-
-### 4.7 Elasticsearch
-
-#### Child-safe explanation
-
-Elasticsearch is the giant catalog room with shelves, card drawers, and special meaning-card cabinets. It remembers sessions, past answers, snapshots, and roadmap nodes so the library does not forget between visits.
-
-#### Technical responsibility
-
-- Stores multiple indices:
-  - `sessions`
-  - `session_interactions`
-  - `knowledge_snapshots`
-  - `dependency_graph`
-  - `learning_resources`
-  - `user_profiles`
-- Stores both normal searchable text and vector fields.
-- Supports exact lookup, filtered lookup, and semantic-style vector retrieval later.
-
-#### Handoff behavior
-
-- Receives writes from `rag-orchestrator`.
-- Can be queried by `rag-orchestrator`.
-- Is inspected by humans through Kibana.
-
-#### Files and configs
-
-- Shared env: `.env.dist` values `ELASTICSEARCH_PORT`, `ELASTICSEARCH_TRANSPORT_PORT`, `ELASTICSEARCH_HOST`, `ELASTICSEARCH_USERNAME`, `ELASTICSEARCH_PASSWORD` - Control how Elasticsearch is exposed and how clients would authenticate if credentials were used. These settings define how the rest of the system finds the catalog room.
-- Shared config: `docker-compose.yml` - Declares the Elasticsearch image, ports, mounted config, mounted templates, and data volume. It is the container-level setup that turns storage into a running service for the rest of the stack.
-- `infrastructure/elasticsearch/config/elasticsearch.yml` - Main Elasticsearch node configuration. It defines how the catalog room process starts and behaves.
-- `infrastructure/elasticsearch/config/jvm.options` - JVM memory and runtime settings for Elasticsearch. It shapes heap usage and stability for the storage engine.
-- `infrastructure/elasticsearch/config/log4j2.properties` - Elasticsearch logging configuration. It controls how the storage service records its own internal logs.
-- `infrastructure/elasticsearch/config/elasticsearch.keystore` - Secure-settings store used by Elasticsearch. In this local setup it mainly preserves the expected secure-config artifact for the container.
-- `infrastructure/elasticsearch/scripts/bootstrap.sh` - Applies templates and creates indices in the right order. It is the operator step that prepares the catalog room before real learner flow begins.
-- `infrastructure/elasticsearch/indices/sessions.json` - Index template for full session documents. It stores the top-level learner folder that the orchestrator restores later.
-- `infrastructure/elasticsearch/indices/user_profiles.json` - Index template for learner profile summaries and embeddings. It stores the semantic profile created at session start.
-- `infrastructure/elasticsearch/indices/session_interactions.json` - Index template for per-message interaction records. It stores the turn-by-turn conversation trace used for audit and later retrieval.
-- `infrastructure/elasticsearch/indices/knowledge_snapshots.json` - Index template for synthesized calibration and learning snapshots. It stores compact knowledge-state summaries for later reuse.
-- `infrastructure/elasticsearch/indices/learning_resources.json` - Index template for public resources and concept materials, including vectors. It stores the retrieved and generated materials used around tuning and learning.
-- `infrastructure/elasticsearch/indices/dependency_graph.json` - Index template for roadmap nodes and graph-like learning structure. It stores the plan the learner is meant to walk through.
-
-### 4.8 Kibana
-
-#### Child-safe explanation
-
-Kibana is the glass observation room. It does not teach the visitor. It lets the adult librarians look through windows and see what is stored in the big catalog room.
-
-#### Technical responsibility
-
-- Browser UI for inspecting Elasticsearch data.
-- Useful for validating session state, interactions, snapshots, and dependency graph nodes during demos.
-
-#### Handoff behavior
-
-- Reads from Elasticsearch.
-- Does not participate in learner request execution.
-
-#### Files and configs
-
-- Shared env: `.env.dist` value `KIBANA_PORT` - Controls which host port exposes Kibana in the browser. It decides how humans enter the inspection flow.
-- Shared config: `docker-compose.yml` - Starts the vendor Kibana image and points it at Elasticsearch. This is the only repository-owned wiring for the observation-room UI.
-- There is no dedicated local `infrastructure/kibana` tree in the current repository snapshot. Kibana is currently configured as a vendor container rather than a custom code module in this repo.
-
-## 5. Every Flow In The Project: Technical View + Library Story Overlay
-
-Each flow below has two parts:
-
-- Technical flow: the real call chain.
-- Library story: the same event explained with the library picture.
-
-### 5.1 Container Boot Flow
-
-#### Technical flow
-
-1. `docker-compose.yml` starts all services on `appnet`.
-2. `backend` runs `services/backend/entrypoint.sh`, ensures Composer dependencies, generates Laravel key, and runs `php artisan serve`.
-3. `frontend` runs Vite app container.
-4. `rag-orchestrator` boots FastAPI and, on startup, preloads saved sessions by calling `SessionStore.list()`.
-5. `llm-engine` runs `services/llm-engine/entrypoint.sh`, resolves config, ensures model file exists, then launches `llama-server`.
-6. `embedding-worker` starts FastAPI app and loads the transformer model lazily on first use.
-7. `search-agent` starts FastAPI app.
-8. `elasticsearch` starts with mounted config and data volume.
-9. `kibana` waits on Elasticsearch.
-
-#### Library story
-
-The library building opens. Each librarian walks to the correct desk. Louis checks whether the big reference book is on the shelf. Emily warms up the meaning-card machine. The head librarian checks yesterday's visitor cards and puts them back on the work table.
-
-### 5.2 Elasticsearch Bootstrap Flow
-
-#### Technical flow
-
-1. Operator runs `make bootstrap-es`.
-2. `infrastructure/elasticsearch/scripts/bootstrap.sh` applies each template file under `infrastructure/elasticsearch/indices`.
-3. The script creates the concrete indices explicitly.
-
-#### Library story
-
-Before visitors arrive, the filing cabinets are labeled and empty drawers are created so every future card has the right home.
-
-### 5.3 Frontend Load And Session Hydration Flow
-
-#### Technical flow
-
-1. `services/frontend/app/src/main.js` dispatches `store.dispatch('hydrateFromStorage')` before mounting the app.
-2. `services/frontend/app/src/store/index.js` reads:
-   - `teacher.sessionHistory`
-   - `teacher.activeSessionId`
-3. If `pendingRestoreId` exists, `loadSession(sessionId)` calls `api.fetchSession(sessionId)`.
-4. Axios in `src/services/api.js` calls `GET /api/v1/sessions/{sessionId}`.
-5. Laravel route `routes/api.php` maps to `ChatSessionController::show`.
-6. `RagClient::fetchSession()` calls `GET /v1/sessions/{sessionId}` on `rag-orchestrator`.
-7. FastAPI route `get_session()` in `sessions_router.py` is a thin controller and delegates to `UserWorkflowService.get_session()`.
-8. `UserWorkflowService.get_session()` returns the in-memory session, or restores it from Elasticsearch through `SessionRepository.get()` if needed.
-9. `session_response_mapper.py` converts the internal session object into the public response DTO.
-10. Response travels back to Vuex and updates UI state.
-
-#### Library story
-
-When the visitor walks back in, the welcome desk checks whether the visitor already has a card in their pocket. If yes, the gatekeeper asks the head librarian to pull the old learning folder back from storage so the conversation can continue from the same page.
-
-### 5.4 Start New Session Flow
-
-#### Technical flow
-
-1. User enters goal and optional profile in `ChatView.vue`.
-2. `start()` dispatches `store.dispatch('startSession', { goal, profile })`.
-3. Vuex `startSession` calls `api.startSession(payload)`.
-4. Axios issues `POST /api/v1/sessions`.
-5. Laravel `ChatSessionController::start()` validates:
-   - `goal` required string
-   - `profile` optional array
-6. `RagClient::startSession()` forwards `POST /v1/sessions`.
-7. FastAPI `post_session()` is a thin controller and delegates to `UserWorkflowService.start_new_session()`.
-8. `UserWorkflowService.start_new_session()`:
-   - creates calibration queue via `CalibrationPlannerService.questions()`
-   - calls `SessionManagerService.create_session()`
-   - calls `SessionManagerService.next_calibration_question()`
-   - appends assistant message with the first calibration question
-   - stores learner profile in Elasticsearch through `LearningMemoryRepository`
-   - stores assistant interaction in Elasticsearch index `session_interactions`
-   - stores full session document in Elasticsearch index `sessions`
-9. `session_response_mapper.py` converts the internal session object into the public response DTO.
-10. Response returns to Laravel, then to Vuex, which stores:
-   - `sessionId`
-   - `messages`
-   - `phase`
-   - `sessionHistory`
-11. Frontend writes session history and active session id to localStorage.
-
-#### Library story
-
-The visitor tells the front desk, "I want to learn X." The desk clerk writes the request. The office librarian checks the slip. The head librarian creates a fresh folder, places the first warm-up question inside, files a copy in the archive room, and sends the question back to the visitor.
-
-### 5.5 Calibration Answer Loop
-
-#### Technical flow
-
-1. User sends a message through `ChatInput.vue`.
-2. `ChatView.vue` calls `store.dispatch('sendMessage', { message })`.
-3. Vuex appends the local user message immediately for responsive UI.
-4. Axios calls `POST /api/v1/sessions/{sessionId}`.
-5. Laravel `ChatSessionController::message()` validates:
-   - `message` required string
-   - `metadata` optional array
-6. `RagClient::sendMessage()` forwards to FastAPI `post_message()`.
-7. `post_message()` is a thin controller and delegates to `UserWorkflowService.send_message()`.
-8. `UserWorkflowService.send_message()`:
-   - restores session from Elasticsearch if not already in memory
-   - appends user message to transcript
-   - requests embedding from `embedding-worker`
-   - stores user interaction in `session_interactions` through `LearningMemoryRepository`
-   - delegates the calibration-phase branch to `CalibrationWorkflowService.handle_answer()`
-   - `CalibrationWorkflowService` records answer in `calibration_history`
-   - `CalibrationWorkflowService` synthesizes a simple snapshot via `CalibrationPlannerService.synthesize_snapshot()`
-   - `CalibrationWorkflowService` stores snapshot in `knowledge_snapshots`
-   - `CalibrationWorkflowService` asks `SessionManagerService.next_calibration_question()`
-   - `CalibrationWorkflowService` either appends the next assistant question or hands off to tuning
-   - stores assistant interaction
-   - persists updated session in `sessions`
-9. `session_response_mapper.py` converts the workflow result into the public response DTO.
-10. Response returns to Vuex.
-11. Vuex appends the assistant message and updates summary state.
-
-#### Library story
-
-The visitor answers a warm-up question. Emily makes a meaning card for the answer. The head librarian puts the answer into the visitor folder, writes a short note about it, files that note, chooses the next question, and sends it back.
-
-### 5.6 Calibration Completion -> Tuning Roadmap -> Learning Intro Flow
-
-#### Technical flow
-
-1. The final calibration answer arrives through the same `send_message()` endpoint.
-2. `CalibrationWorkflowService.handle_answer()` discovers that `SessionManagerService.next_calibration_question()` returns `None`.
-3. `TuningWorkflowService.complete_calibration()` starts the calibration-to-learning bridge.
-4. `TuningProgramGeneratorService.build_search_query()` derives a search query from the goal and calibration answers.
-5. `ResourceDiscoveryService.discover_resources()` calls `SearchClient.search(..., enrich=False)`, which in turn calls `search-agent`.
-6. `ResourceDiscoveryService` normalizes the returned external resources, computes embeddings, and writes them into Elasticsearch `learning_resources`.
-7. `TuningProgramGeneratorService.generate()` sends calibration answers plus retrieved resources to `llm-engine` and expects roadmap JSON back.
-8. `SessionManagerService.set_tuning_plan()` stores the roadmap and sets phase to `tuning`.
-9. `SessionManagerService.begin_learning()` immediately sets phase to `learning`.
-10. Each roadmap node is persisted into Elasticsearch `dependency_graph`, and concept resources are also persisted to `learning_resources`.
-11. `LearningCoordinatorService.build_overview()` creates the first learning concept summary, resources, and exercise.
-12. Assistant message is appended with stage `learning_intro`.
-13. Session is persisted to Elasticsearch.
-
-#### Library story
-
-When the warm-up questions are finished, the head librarian first asks the outside-travel librarian for a fast list of useful public references instead of waiting for full photocopies of every page. Then the head librarian uses that quick list plus the visitor folder to draw the learning map, pins it on the wall, marks the first shelf to visit, and gives the first exercise card to the visitor.
-
-### 5.7 Learning Answer -> Pass Path
-
-#### Technical flow
-
-1. Learner submits an answer while `session.phase == "learning"`.
-2. `LearningWorkflowService.handle_answer()` identifies current concept via `LearningCoordinatorService.current_node()`.
-3. `ExerciseGraderService.evaluate()` builds a grading prompt from:
-   - concept metadata
-   - resources
-   - exercise text
-   - rubric from `grading_profiles.yaml`
-   - learner answer
-4. `LlmClient.generate()` calls `llm-engine`.
-5. If the response contains valid JSON, grading result is used. Otherwise the request fails explicitly with `ExerciseGradingError`.
-6. If `passed == true`:
-   - `SessionManagerService.record_learning_outcome()` stores concept status `complete`
-   - knowledge snapshot is stored in `knowledge_snapshots`
-   - `SessionManagerService.advance_concept()` moves to the next concept
-   - next concept overview is generated unless roadmap is finished
-7. Assistant response is stored in `session_interactions` through `LearningMemoryRepository`.
-8. Updated session is saved in `sessions`.
-
-#### Library story
-
-The visitor finishes a lesson and hands in homework. Louis reviews it using the scoring sheet. If the answer is good enough, the head librarian stamps the concept as completed and hands over the next shelf card.
-
-### 5.8 Learning Answer -> Retry Path
-
-#### Technical flow
-
-1. Same grading setup as the pass path.
-2. `LearningWorkflowService.handle_answer()` keeps the learner on the same concept when `passed == false`:
-   - `SessionManagerService.record_learning_outcome()` stores status `needs_revision`
-   - snapshot is stored, usually without embedding for failed answer persistence
-   - current concept index stays the same
-   - assistant message uses stage `learning_retry`
-3. Session persists without advancing concept.
-
-#### Library story
-
-The homework is not wrong forever; it is just not ready yet. Louis writes feedback, the head librarian keeps the visitor at the same shelf, and says, "Try again with these corrections."
-
-### 5.9 Full Completion Flow
-
-#### Technical flow
-
-1. Final concept answer passes grading.
-2. `SessionManagerService.advance_concept()` increments beyond last roadmap node.
-3. Session phase becomes `learning_complete`.
-4. Assistant returns completion message.
-5. Subsequent messages go through the completion branch in `UserWorkflowService.send_message()` and receive:
-   - "Learning program already completed. Use /no more to wrap up or ask for a recap."
-
-Important note:
-
-- The message mentions `/no more`, but there is not yet an implemented `/no more` command branch in `sessions.py`.
-
-#### Library story
-
-The visitor has finished every planned shelf. The library marks the folder complete and says the formal wrap-up ritual exists, but in the current building that ritual is not fully built yet.
-
-### 5.10 Resume Existing Session Across Later Visits
-
-#### Technical flow
-
-1. Browser stores `sessionHistory` and active session id in localStorage.
-2. Later, the user returns.
-3. `hydrateFromStorage()` tries `loadSession()`.
-4. Backend controller and RAG controller delegate to their service layers.
-5. `SessionWorkflowService.get_session()` fetches the session from memory or Elasticsearch.
-6. UI shows:
-   - active goal
-   - current phase
-   - previous transcript
-
-#### Library story
-
-The visitor leaves the library and comes back another day. The welcome desk recognizes the folder number and brings back the exact same folder instead of starting over.
-
-### 5.11 `/lab` Primer Flow
-
-#### Technical flow
-
-1. User sends a message beginning with `/lab`.
-2. `UserWorkflowService.send_message()` detects the command before normal grading flow.
-3. Requested concept is resolved from:
-   - command argument if present
-   - current learning concept if already learning
-   - session goal otherwise
-4. `LabPrimerService.generate()` renders:
-   - `README.md`
-   - `docker-compose.yml`
-   - `Makefile`
-   - `notes.md`
-5. If `RAG_LAB_AUTO_WRITE=1` and `RAG_LAB_OUTPUT_ROOT` is set, files can be written automatically.
-6. Assistant returns the generated file blocks in markdown fences.
-7. Interactions and updated session are persisted.
-
-#### Library story
-
-The visitor asks, "Can I get a mini practice kit?" The head librarian assembles a small box with instructions, a room setup card, a task list, and study notes.
-
-### 5.12 LLM Grading Flow
-
-#### Technical flow
-
-1. `ExerciseGraderService` builds a prompt with strict JSON output instructions.
-2. `LlmClient.generate()` sends an OpenAI-compatible `POST /v1/chat/completions` request to `llm-engine`.
-3. If the model returns valid JSON, `_parse_result()` extracts:
-   - `passed`
-   - `score`
-   - `feedback`
-   - `highlights`
-4. If parsing or transport fails, the request fails explicitly instead of using local scoring.
-
-Current implementation truth:
-
-- The normal path is now truly model-backed.
-- Invalid model output now stops the learning request instead of being repaired silently.
-
-#### Library story
-
-Louis is supposed to judge the homework. If Louis is unavailable, the library uses a simpler emergency checklist so the session can continue.
-
-### 5.13 Search-Agent Flow (Now Part Of The Tuning Hot Path)
-
-#### Technical flow
-
-1. `search-agent` exposes `/v1/search?q=...&enrich=...`.
-2. `DuckDuckGoClient.search()` requests the DuckDuckGo HTML endpoint.
-3. `parse_results()` extracts result cards.
-4. Optional enrichment fetches individual result pages with `WebScraper.fetch()`.
-5. `SearchClient` in `rag-orchestrator` calls this service when calibration completes and the roadmap is about to be generated.
-6. The current learner-facing hot path calls it with `enrich=False`, so roadmap generation uses result cards and snippets without waiting for page scraping.
-7. Normalized search results are embedded and written into Elasticsearch `learning_resources`.
-8. The roadmap prompt sent to `llm-engine` includes these retrieved resources.
-
-Current implementation truth:
-
-- `SearchClient` exists and is now part of the active tuning flow.
-- The learner-facing roadmap request now uses fast result cards and snippets, not inline page scraping.
-- The search results are not just transient. They are persisted for reuse in `learning_resources`.
-
-#### Library story
-
-The outside-travel librarian now leaves the building when the library needs to build the learning map. The returned book cards are copied into the local catalog so they can be reused later.
-
-### 5.14 Elasticsearch Persistence Flow
-
-#### Technical flow
-
-Current hot-path writes:
-
-- `sessions`
-  - full session document via `SessionStore.save()`
-- `session_interactions`
-  - every assistant and user turn via `store_interaction()`
-- `knowledge_snapshots`
-  - calibration snapshots and learning result summaries
-- `dependency_graph`
-  - generated roadmap nodes
-- `user_profiles`
-  - profile summary and profile embedding stored at session start
-- `learning_resources`
-  - external search results and roadmap resources stored with embeddings during tuning
-
-#### Library story
-
-After almost every meaningful step, the librarians make copies of the important papers and place them in the correct drawers so nothing is lost if someone forgets or leaves.
-
-### 5.15 Kibana Inspection Flow
-
-#### Technical flow
-
-1. A developer, tester, or presenter opens Kibana in the browser by hand.
-2. Kibana connects to Elasticsearch.
-3. They inspect indices, documents, and timestamps.
-
-Plain-language clarification:
-
-- Kibana is not a service your learner session calls automatically.
-- It is a dashboard humans open manually when they want to inspect what Elasticsearch contains.
-
-#### Library story
-
-The head of the library steps into the observation room and looks through the glass at how the filing cabinets are filling up.
-
-### 5.16 Demo Logging Flow
-
-#### Technical flow
-
-1. `docker-compose.yml` mounts `./infrastructure/demo-logs` into owned service containers as `/shared-logs`.
-2. Each owned service writes to `FLOW_LOG_PATH`, default `/shared-logs/teacher-flow.log`.
-3. Backend logs request entry and upstream delegation.
-4. RAG orchestrator logs state transitions, persistence, grading, and service calls.
-5. Embedding worker logs vector generation.
-6. Search agent logs query and enrichment work.
-7. LLM engine logs startup and model-load events, while per-request LLM events are logged by `rag-orchestrator` at the client boundary.
-
-Important design note:
-
-- The frontend does not append directly to the single file, because browser code should not write into a host-mounted server log file.
-- Owned services also push each flow event to a backend event stream, and the frontend shows the recent window in the `Live Flow Console` at the bottom of the app.
-- Elasticsearch and Kibana are vendor containers. Their participation is logged at the project-owned call boundary rather than by patching the vendor internals.
-
-#### Library story
-
-Every owned librarian writes a short diary line into one shared notebook. Some outside machines do not write directly into that notebook, so the nearby librarian writes, "I just asked that machine to do X" and "it answered with Y."
-
-## 6. Professional-Only Summary As A Multi-Session User Story
+## Professional-Only Summary As A Multi-Session User Story
 
 This section intentionally drops the child story and uses only professional language.
 
@@ -891,131 +250,3 @@ This section intentionally drops the child story and uses only professional lang
 3. Each failed answer keeps the same index and returns feedback.
 4. Once last concept passes, phase becomes `learning_complete`.
 5. Session remains loadable through the same resume flow.
-
-## 7. Why The Configuration Looks This Way
-
-These choices are not random. They exist to fit the target machine and the current development stage.
-
-- `mistral-7b-instruct-v0.2` in `Q4_K_M` format: small enough to be practical on the target workstation while still being useful for local experimentation.
-- `LLM_ACCELERATION_MODE=gpu` with `gpu_layers=32` by default: the target machine includes an RX 6600, so the project now uses the GPU by default for the chat model while keeping a one-line CPU fallback switch.
-- `bge-base-en-v1.5`, 768 dims: well-known embedding model with manageable resource use and direct alignment with the Elasticsearch `dense_vector` mappings.
-- Elasticsearch 9.1.4: provides a single place for structured documents and vector-capable fields.
-- Laravel in front of FastAPI: keeps a PHP-native public API boundary while isolating RAG logic in Python.
-- DuckDuckGo HTML search agent: avoids paid APIs and aligns with the project's operating constraints.
-- Session persistence in Elasticsearch: supports stateless container restarts and multi-session resumption.
-- LLM-generated roadmap in strict mode: the normal path is retrieval plus LLM planning, and invalid roadmap output now fails explicitly.
-
-## 8. Single Demo Log: What Was Added And How To Use It
-
-### Log file path
-
-- Host path: `infrastructure/demo-logs/teacher-flow.log`
-- In-container path: `/shared-logs/teacher-flow.log`
-
-### What writes to it
-
-- Laravel backend:
-  - request received
-  - request validated
-  - upstream RAG dispatch
-  - upstream RAG response
-- RAG orchestrator:
-  - startup hydration
-  - session creation
-  - message append
-  - calibration state changes
-  - roadmap creation
-  - learning evaluation
-  - snapshot and session persistence
-  - embedding, search, LLM, and Elasticsearch call boundaries
-- Embedding worker:
-  - model load
-  - embedding request receive
-  - embedding completion
-- Search agent:
-  - startup
-  - search request
-  - DuckDuckGo request
-  - page enrichment
-  - response completion
-- LLM engine:
-  - config load
-  - model download
-  - server start
-
-### What does not write to it directly
-
-- Frontend browser code
-- Elasticsearch internals
-- Kibana internals
-
-Those steps are represented by adjacent owned service logs instead.
-
-### Example line format
-
-```text
-2026-05-02T16:20:11.123456+00:00 | backend | http.sessions.start.received | Backend received a request from the frontend to start a new learning session. | {"goal_preview":"Learn ESRE fundamentals","has_profile":true}
-```
-
-### Suggested demo workflow
-
-1. Rebuild and restart the stack so the compose mount and new env wiring are active.
-2. Follow the file with `tail -f infrastructure/demo-logs/teacher-flow.log`.
-3. Start a new session in the UI.
-4. Answer calibration questions.
-5. Trigger roadmap generation by completing calibration.
-6. Submit one weak learning answer and one strong learning answer.
-7. Optionally send `/lab vector search`.
-8. Open Kibana and inspect:
-   - `sessions`
-   - `session_interactions`
-   - `knowledge_snapshots`
-   - `dependency_graph`
-
-## 9. Fast "Where Do I Look?" Reference
-
-If you want to understand one concern quickly, start here:
-
-- Browser state and API calls: `services/frontend/app/src/store/index.js`
-- Session entrypoints in PHP: `services/backend/app/app/Http/Controllers/Api/ChatSessionController.php`
-- PHP to Python bridge: `services/backend/app/app/Services/Rag/RagClient.php`
-- FastAPI HTTP controller entrypoints: `services/rag-orchestrator/app/api/routes/sessions_router.py`
-- Main workflow state machine: `services/rag-orchestrator/app/services/user_workflow_service.py`
-- Calibration-phase orchestration: `services/rag-orchestrator/app/services/calibration_workflow_service.py`
-- Session transitions: `services/rag-orchestrator/app/services/session_manager_service.py`
-- API response shaping: `services/rag-orchestrator/app/mappers/session_response_mapper.py`
-- Grading behavior: `services/rag-orchestrator/app/services/exercise_grader_service.py`
-- Roadmap generation: `services/rag-orchestrator/app/services/tuning_program_generator_service.py`
-- Search-agent orchestration and resource cleanup: `services/rag-orchestrator/app/services/resource_discovery_service.py`
-- Learning concept rendering: `services/rag-orchestrator/app/services/learning_coordinator_service.py`
-- Session persistence: `services/rag-orchestrator/app/repositories/session_repository.py`
-- Learning-flow Elasticsearch writes: `services/rag-orchestrator/app/repositories/learning_memory_repository.py`
-- Low-level Elasticsearch client: `services/rag-orchestrator/app/clients/elasticsearch_client.py`
-- Embedding generation: `services/embedding-worker/app/main.py`
-- External search path: `services/search-agent/app/routes/search.py`
-- Model runtime configuration: `services/llm-engine/config.yaml`
-- Demo flow log source wiring: `docker-compose.yml`
-
-## 10. Final Mental Model
-
-The simplest correct mental model for this codebase today is:
-
-- Frontend is the conversation desk.
-- Backend is the guarded API entrance.
-- RAG orchestrator is the workflow brain.
-- Emily the embedding worker turns text into meaning numbers.
-- Louis the LLM engine judges or generates when asked.
-- Elasticsearch is memory.
-- Search-agent is an external scout that now feeds the roadmap-building step.
-- Kibana is the observation tower that humans open manually when they want to inspect Elasticsearch.
-
-The most important engineering truth is that this is not "one AI service." It is a coordinated multi-service workflow where most of the reliability comes from normal software engineering:
-
-- explicit API boundaries
-- persisted state
-- deterministic phase transitions
-- explicit failure boundaries
-- observable logs
-- containerized runtime constraints
-
-That is the bridge from "library story" to "professional system understanding."
